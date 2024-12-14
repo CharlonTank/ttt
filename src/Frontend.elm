@@ -253,13 +253,15 @@ view model =
     { title = "Ultimate Morpion"
     , body =
         [ div 
-            [ style "padding" "40px"
-            , style "font-family" "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif"
-            , style "min-height" "100vh"
+            [ style "min-height" "100vh"
+            , style "min-height" "100dvh"
+            , style "width" "100%"
             , style "background" "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)"
             , style "display" "flex"
-            , style "flex-direction" "column"
             , style "align-items" "center"
+            , style "justify-content" "center"
+            , style "padding" "env(safe-area-inset-top, 10px) env(safe-area-inset-right, 10px) env(safe-area-inset-bottom, 10px) env(safe-area-inset-left, 10px)"
+            , style "box-sizing" "border-box"
             ]
             [ viewGame model ]
         ]
@@ -269,23 +271,38 @@ view model =
 viewGame : Model -> Html FrontendMsg
 viewGame model =
     div 
-        [ style "text-align" "center"
-        , style "background-color" "white"
+        [ style "background-color" "white"
         , style "border-radius" "20px"
         , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
-        , style "padding" "30px"
-        , style "max-width" "800px"
-        , style "width" "100%"
+        , style "width" "min(95vw, calc(100vh - 40px))"
+        , style "display" "flex"
+        , style "flex-direction" "column"
+        , style "box-sizing" "border-box"
+        , style "overflow" "hidden"
         ]
-        [ h1 
-            [ style "margin" "0 0 20px 0"
-            , style "color" "#2c3e50"
-            , style "font-size" "2.5em"
-            , style "font-weight" "700"
-            ] 
-            [ text "Ultimate Morpion" ]
-        , viewStatus model.board
-        , viewBigBoard model.board
+        [ div 
+            [ style "padding" "20px 20px 0 20px"
+            , style "flex" "0 0 auto"
+            ]
+            [ h1 
+                [ style "margin" "0"
+                , style "color" "#2c3e50"
+                , style "font-size" "clamp(1.2em, 4vw, 2em)"
+                , style "font-weight" "700"
+                ] 
+                [ text "Ultimate Morpion" ]
+            , viewStatus model.board
+            ]
+        , div 
+            [ style "flex" "1"
+            , style "display" "flex"
+            , style "align-items" "center"
+            , style "justify-content" "center"
+            , style "min-height" "0"
+            , style "padding" "10px 20px"
+            , style "overflow" "hidden"
+            ]
+            [ viewBigBoard model.board ]
         , viewRestartButton
         ]
 
@@ -293,9 +310,9 @@ viewGame model =
 viewStatus : BigBoard -> Html msg
 viewStatus board =
     h2 
-        [ style "margin" "20px"
+        [ style "margin" "10px 0"
         , style "color" "#34495e"
-        , style "font-size" "1.5em"
+        , style "font-size" "clamp(0.9em, 3vw, 1.2em)"
         , style "font-weight" "600"
         ]
         [ text <|
@@ -321,18 +338,16 @@ playerToString player =
 viewBigBoard : BigBoard -> Html FrontendMsg
 viewBigBoard board =
     div 
-        [ style "display" "inline-block"
-        , style "background-color" "#f8fafc"
-        , style "border-radius" "15px"
-        , style "padding" "20px"
+        [ style "display" "grid"
+        , style "grid-template-columns" "repeat(3, 1fr)"
+        , style "gap" "clamp(4px, 1vh, 10px)"
+        , style "aspect-ratio" "1/1"
+        , style "width" "100%"
+        , style "height" "100%"
+        , style "max-width" "100%"
+        , style "max-height" "100%"
         ]
-        (List.groupsOf 3 (List.indexedMap (viewSmallBoard board) board.boards)
-            |> List.map
-                (\row ->
-                    div [ style "display" "flex", style "gap" "15px", style "margin-bottom" "15px" ]
-                        row
-                )
-        )
+        (List.indexedMap (viewSmallBoard board) board.boards)
 
 
 viewSmallBoard : BigBoard -> Int -> SmallBoard -> Html FrontendMsg
@@ -348,9 +363,9 @@ viewSmallBoard bigBoard boardIndex smallBoard =
 
         borderColor =
             if isActive then
-                "3px solid #4CAF50"
+                "2px solid #4CAF50"
             else
-                "3px solid #e2e8f0"
+                "2px solid #e2e8f0"
 
         backgroundColor =
             case smallBoard.winner of
@@ -365,27 +380,23 @@ viewSmallBoard bigBoard boardIndex smallBoard =
 
         boxShadow =
             if isActive then
-                "0 0 15px rgba(76, 175, 80, 0.3)"
+                "0 0 10px rgba(76, 175, 80, 0.3)"
             else
-                "0 4px 6px rgba(0, 0, 0, 0.1)"
+                "0 2px 4px rgba(0, 0, 0, 0.1)"
     in
     div
         [ style "border" borderColor
         , style "background-color" backgroundColor
-        , style "padding" "12px"
-        , style "border-radius" "12px"
+        , style "border-radius" "8px"
         , style "transition" "all 0.3s ease"
         , style "box-shadow" boxShadow
+        , style "display" "grid"
+        , style "grid-template-columns" "repeat(3, 1fr)"
+        , style "gap" "clamp(2px, 0.5vh, 4px)"
+        , style "padding" "clamp(2px, 0.5vh, 4px)"
+        , style "aspect-ratio" "1/1"
         ]
-        [ div []
-            (List.groupsOf 3 (List.indexedMap (viewCell bigBoard boardIndex) smallBoard.cells)
-                |> List.map
-                    (\row ->
-                        div [ style "display" "flex", style "gap" "8px", style "margin-bottom" "8px" ]
-                            row
-                    )
-            )
-        ]
+        (List.indexedMap (viewCell bigBoard boardIndex) smallBoard.cells)
 
 
 viewCell : BigBoard -> Int -> Int -> CellState -> Html FrontendMsg
@@ -414,20 +425,19 @@ viewCell board boardIndex cellIndex cellState =
                     ("#3498db", "")
     in
     div
-        [ style "width" "55px"
-        , style "height" "55px"
-        , style "border" "2px solid #e2e8f0"
-        , style "border-radius" "8px"
+        [ style "border" "1px solid #e2e8f0"
+        , style "border-radius" "4px"
         , style "background-color" "#ffffff"
         , style "display" "flex"
         , style "align-items" "center"
         , style "justify-content" "center"
-        , style "font-size" "36px"
+        , style "font-size" "clamp(12px, 3vh, 24px)"
         , style "font-weight" "bold"
         , style "cursor" (if cellState == Empty then "pointer" else "default")
         , style "color" textColor
         , style "transition" "all 0.2s ease"
         , style "user-select" "none"
+        , style "aspect-ratio" "1/1"
         , style "hover:background-color" hoverBg
         , onClick (CellClicked boardIndex cellIndex)
         ]
@@ -437,20 +447,20 @@ viewCell board boardIndex cellIndex cellState =
 viewRestartButton : Html FrontendMsg
 viewRestartButton =
     button
-        [ style "margin-top" "30px"
-        , style "padding" "12px 24px"
-        , style "font-size" "16px"
+        [ style "width" "100%"
+        , style "padding" "15px"
+        , style "font-size" "clamp(12px, 2vh, 16px)"
         , style "font-weight" "600"
         , style "background-color" "#3498db"
         , style "color" "white"
         , style "border" "none"
-        , style "border-radius" "8px"
+        , style "border-top-left-radius" "0"
+        , style "border-top-right-radius" "0"
+        , style "border-bottom-left-radius" "20px"
+        , style "border-bottom-right-radius" "20px"
         , style "cursor" "pointer"
         , style "transition" "all 0.2s ease"
-        , style "box-shadow" "0 4px 6px rgba(52, 152, 219, 0.2)"
-        , style "hover:background-color" "#2980b9"
-        , style "hover:transform" "translateY(-2px)"
-        , style "hover:box-shadow" "0 6px 8px rgba(52, 152, 219, 0.3)"
+        , style "margin-top" "auto"
         , onClick RestartGame
         ]
         [ text "Restart Game" ]
