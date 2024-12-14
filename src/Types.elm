@@ -29,9 +29,34 @@ type alias BigBoard =
     }
 
 
+type BotDifficulty
+    = Easy
+    | Medium
+    | Hard
+    | Elite
+
+
+type GameMode
+    = WithFriend
+    | WithBot BotDifficulty
+
+
+type Route
+    = Home
+    | Game GameMode
+
+
+type Language
+    = FR
+    | EN
+
+
 type alias FrontendModel =
     { key : Key
     , board : BigBoard
+    , route : Route
+    , botDifficultyMenuOpen : Bool
+    , language : Language
     }
 
 
@@ -45,6 +70,13 @@ type FrontendMsg
     | UrlChanged Url
     | CellClicked Int Int  -- First Int is board index (0-8), second is cell index (0-8)
     | RestartGame
+    | StartGameWithFriend
+    | StartGameWithBot
+    | SelectBotDifficulty BotDifficulty
+    | CancelBotDifficulty
+    | ReturnToMenu
+    | BotMove
+    | ChangeLanguage Language
 
 
 type ToBackend
