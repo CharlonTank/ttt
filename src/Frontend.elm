@@ -340,10 +340,11 @@ viewBigBoard board =
     div 
         [ style "display" "grid"
         , style "grid-template-columns" "repeat(3, 1fr)"
-        , style "gap" "clamp(4px, 1vmin, 10px)"
+        , style "gap" "10px"
+        , style "width" "min(70vh, 100%)"
         , style "aspect-ratio" "1/1"
-        , style "width" "100%"
-        , style "max-width" "min(100%, 70vh)"
+        , style "margin" "0 auto"
+        , style "padding" "2px"
         ]
         (List.indexedMap (viewSmallBoard board) board.boards)
 
@@ -361,9 +362,9 @@ viewSmallBoard bigBoard boardIndex smallBoard =
 
         borderColor =
             if isActive then
-                "2px solid #4CAF50"
+                "#4CAF50"
             else
-                "2px solid #e2e8f0"
+                "#e2e8f0"
 
         backgroundColor =
             case smallBoard.winner of
@@ -375,24 +376,16 @@ viewSmallBoard bigBoard boardIndex smallBoard =
 
                 Nothing ->
                     "#ffffff"
-
-        boxShadow =
-            if isActive then
-                "0 0 10px rgba(76, 175, 80, 0.3)"
-            else
-                "0 2px 4px rgba(0, 0, 0, 0.1)"
     in
     div
-        [ style "border" borderColor
-        , style "background-color" backgroundColor
+        [ style "background-color" backgroundColor
         , style "border-radius" "8px"
-        , style "transition" "all 0.3s ease"
-        , style "box-shadow" boxShadow
         , style "display" "grid"
         , style "grid-template-columns" "repeat(3, 1fr)"
-        , style "gap" "clamp(2px, 0.5vh, 4px)"
-        , style "padding" "clamp(2px, 0.5vh, 4px)"
+        , style "gap" "2px"
+        , style "padding" "4px"
         , style "aspect-ratio" "1/1"
+        , style "box-shadow" ("0 0 0 2px " ++ borderColor)
         ]
         (List.indexedMap (viewCell bigBoard boardIndex) smallBoard.cells)
 
@@ -423,23 +416,31 @@ viewCell board boardIndex cellIndex cellState =
                     ("#3498db", "")
     in
     div
-        [ style "border" "1px solid #e2e8f0"
-        , style "border-radius" "4px"
+        [ style "width" "100%"
+        , style "aspect-ratio" "1/1"
+        , style "box-shadow" "0 0 0 1px #e2e8f0"
         , style "background-color" "#ffffff"
         , style "display" "flex"
         , style "align-items" "center"
         , style "justify-content" "center"
-        , style "font-size" "clamp(12px, 3vh, 24px)"
+        , style "font-size" "200%"
         , style "font-weight" "bold"
         , style "cursor" (if cellState == Empty then "pointer" else "default")
         , style "color" textColor
-        , style "transition" "all 0.2s ease"
         , style "user-select" "none"
-        , style "aspect-ratio" "1/1"
-        , style "hover:background-color" hoverBg
+        , style "border-radius" "4px"
         , onClick (CellClicked boardIndex cellIndex)
         ]
-        [ text symbol ]
+        [ div 
+            [ style "width" "100%"
+            , style "height" "100%"
+            , style "display" "flex"
+            , style "align-items" "center"
+            , style "justify-content" "center"
+            , style "line-height" "0"
+            ] 
+            [ text symbol ]
+        ]
 
 
 viewRestartButton : Html FrontendMsg
