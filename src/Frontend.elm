@@ -301,11 +301,21 @@ viewStatus board =
         [ text <|
             case board.winner of
                 Just player ->
-                    "🎉 Player " ++ Debug.toString player ++ " wins! 🎉"
+                    "🎉 " ++ playerToString player ++ " wins! 🎉"
 
                 Nothing ->
-                    "Player " ++ Debug.toString board.currentPlayer ++ "'s turn"
+                    playerToString board.currentPlayer ++ "'s turn"
         ]
+
+
+playerToString : Player -> String
+playerToString player =
+    case player of
+        X ->
+            "Player X"
+            
+        O ->
+            "Player O"
 
 
 viewBigBoard : BigBoard -> Html FrontendMsg
@@ -387,10 +397,10 @@ viewCell board boardIndex cellIndex cellState =
                     ""
 
                 Filled X ->
-                    "X"
+                    "×"
 
                 Filled O ->
-                    "O"
+                    "○"
 
         (textColor, hoverBg) =
             case cellState of
@@ -412,7 +422,7 @@ viewCell board boardIndex cellIndex cellState =
         , style "display" "flex"
         , style "align-items" "center"
         , style "justify-content" "center"
-        , style "font-size" "28px"
+        , style "font-size" "36px"
         , style "font-weight" "bold"
         , style "cursor" (if cellState == Empty then "pointer" else "default")
         , style "color" textColor
