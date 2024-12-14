@@ -57,6 +57,7 @@ type alias FrontendModel =
     , route : Route
     , botDifficultyMenuOpen : Bool
     , language : Language
+    , botThinking : Bool
     }
 
 

@@ -39,6 +39,7 @@ init url key =
       , route = Home
       , botDifficultyMenuOpen = False
       , language = FR
+      , botThinking = False
       }
     , Cmd.none
     )
@@ -90,8 +91,10 @@ update msg model =
                                 handlePlayerMove model boardIndex cellIndex
                         in
                         if updatedModel.board.winner == Nothing then
-                            -- Schedule bot's move
-                            ( updatedModel, Cmd.batch [ cmd, Task.perform (always BotMove) (Process.sleep 500) ] )
+                            -- Schedule bot's move and show thinking state
+                            ( { updatedModel | botThinking = True }
+                            , Cmd.batch [ cmd, Task.perform (always BotMove) (Process.sleep 500) ]
+                            )
                         else
                             ( updatedModel, cmd )
 
@@ -108,13 +111,16 @@ update msg model =
                         let
                             botMove =
                                 Bot.findBestMove model.board difficulty
-                        in
-                        case botMove of
-                            Just ( boardIdx, cellIdx ) ->
-                                handlePlayerMove model boardIdx cellIdx
 
-                            Nothing ->
-                                ( model, Cmd.none )
+                            ( newModel, cmd ) =
+                                case botMove of
+                                    Just ( boardIdx, cellIdx ) ->
+                                        handlePlayerMove model boardIdx cellIdx
+
+                                    Nothing ->
+                                        ( model, Cmd.none )
+                        in
+                        ( { newModel | botThinking = False }, cmd )
                     else
                         ( model, Cmd.none )
 
@@ -653,7 +659,16 @@ view model =
             , style "box-sizing" "border-box"
             , style "position" "relative"
             ]
-            [ viewLanguageSelector model.language
+            [ Html.node "style" 
+                [] 
+                [ text """
+                    @keyframes thinking {
+                        0%, 100% { opacity: 0.3; transform: scale(0.8); }
+                        50% { opacity: 1; transform: scale(1.2); }
+                    }
+                """
+                ]
+            , viewLanguageSelector model.language
             , case model.route of
                 Home ->
                     viewHome model
@@ -898,16 +913,40 @@ viewStatus model =
         , style "font-size" "clamp(0.9em, 2.5vmin, 1.2em)"
         , style "font-weight" "600"
         ]
-        [ text <|
-            case model.board.winner of
-                Just player ->
-                    t.playerWins (I18n.playerToString model.language player)
+        [ div
+            [ style "display" "flex"
+            , style "justify-content" "center"
+            , style "align-items" "center"
+            , style "gap" "10px"
+            ]
+            [ text <|
+                case model.board.winner of
+                    Just player ->
+                        t.playerWins (I18n.playerToString model.language player)
 
-                Nothing ->
-                    if model.board.currentPlayer == X then
-                        t.playerXTurn
-                    else
-                        t.playerOTurn
+                    Nothing ->
+                        if model.board.currentPlayer == X then
+                            t.playerXTurn
+                        else
+                            t.playerOTurn
+            , if model.botThinking then
+                viewThinkingIndicator
+              else
+                text ""
+            ]
+        ]
+
+
+viewThinkingIndicator : Html msg
+viewThinkingIndicator =
+    div
+        [ style "display" "inline-flex"
+        , style "align-items" "center"
+        , style "gap" "4px"
+        ]
+        [ div [ style "animation" "thinking 1s infinite" ] [ text "•" ]
+        , div [ style "animation" "thinking 1s infinite 0.3s" ] [ text "•" ]
+        , div [ style "animation" "thinking 1s infinite 0.6s" ] [ text "•" ]
         ]
 
 
