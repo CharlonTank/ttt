@@ -274,20 +274,21 @@ viewGame model =
         [ style "background-color" "white"
         , style "border-radius" "20px"
         , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
-        , style "width" "min(95vw, calc(100vh - 40px))"
+        , style "width" "min(95vw, 90vh)"
         , style "display" "flex"
         , style "flex-direction" "column"
         , style "box-sizing" "border-box"
         , style "overflow" "hidden"
+        , style "padding" "20px"
         ]
         [ div 
-            [ style "padding" "20px 20px 0 20px"
-            , style "flex" "0 0 auto"
+            [ style "text-align" "center"
+            , style "margin-bottom" "15px"
             ]
             [ h1 
                 [ style "margin" "0"
                 , style "color" "#2c3e50"
-                , style "font-size" "clamp(1.2em, 4vw, 2em)"
+                , style "font-size" "clamp(1.2em, 3vmin, 2em)"
                 , style "font-weight" "700"
                 ] 
                 [ text "Ultimate Morpion" ]
@@ -299,8 +300,7 @@ viewGame model =
             , style "align-items" "center"
             , style "justify-content" "center"
             , style "min-height" "0"
-            , style "padding" "10px 20px"
-            , style "overflow" "hidden"
+            , style "margin-bottom" "15px"
             ]
             [ viewBigBoard model.board ]
         , viewRestartButton
@@ -309,10 +309,10 @@ viewGame model =
 
 viewStatus : BigBoard -> Html msg
 viewStatus board =
-    h2 
+    div 
         [ style "margin" "10px 0"
         , style "color" "#34495e"
-        , style "font-size" "clamp(0.9em, 3vw, 1.2em)"
+        , style "font-size" "clamp(0.9em, 2.5vmin, 1.2em)"
         , style "font-weight" "600"
         ]
         [ text <|
@@ -340,12 +340,10 @@ viewBigBoard board =
     div 
         [ style "display" "grid"
         , style "grid-template-columns" "repeat(3, 1fr)"
-        , style "gap" "clamp(4px, 1vh, 10px)"
+        , style "gap" "clamp(4px, 1vmin, 10px)"
         , style "aspect-ratio" "1/1"
         , style "width" "100%"
-        , style "height" "100%"
-        , style "max-width" "100%"
-        , style "max-height" "100%"
+        , style "max-width" "min(100%, 70vh)"
         ]
         (List.indexedMap (viewSmallBoard board) board.boards)
 
@@ -448,19 +446,16 @@ viewRestartButton : Html FrontendMsg
 viewRestartButton =
     button
         [ style "width" "100%"
-        , style "padding" "15px"
-        , style "font-size" "clamp(12px, 2vh, 16px)"
+        , style "padding" "12px"
+        , style "font-size" "clamp(12px, 2vmin, 16px)"
         , style "font-weight" "600"
         , style "background-color" "#3498db"
         , style "color" "white"
         , style "border" "none"
-        , style "border-top-left-radius" "0"
-        , style "border-top-right-radius" "0"
-        , style "border-bottom-left-radius" "20px"
-        , style "border-bottom-right-radius" "20px"
+        , style "border-radius" "10px"
         , style "cursor" "pointer"
         , style "transition" "all 0.2s ease"
-        , style "margin-top" "auto"
+        , style "hover:background-color" "#2980b9"
         , onClick RestartGame
         ]
         [ text "Restart Game" ]
