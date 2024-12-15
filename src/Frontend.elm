@@ -18,6 +18,8 @@ import Lamdera
 import List.Extra as List
 import Process
 import String
+import Svg exposing (Svg, circle, line, svg)
+import Svg.Attributes
 import Task
 import Types exposing (..)
 import Url
@@ -1004,7 +1006,29 @@ view model =
     in
     { title = t.welcome
     , body =
-        [ div
+        [ Html.node "link"
+            [ attribute "rel" "stylesheet"
+            , attribute "href" "https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+            ]
+            []
+        , Html.node "style"
+            []
+            [ text """
+                *:not(.game-symbol) {
+                    font-family: 'Press Start 2P', cursive !important;
+                }
+                @keyframes thinking {
+                    0%, 100% { opacity: 0.3; transform: scale(0.8); }
+                    50% { opacity: 1; transform: scale(1.2); }
+                }
+                @keyframes blink {
+                    0% { opacity: 0.5; }
+                    50% { opacity: 1; }
+                    100% { opacity: 0.5; }
+                }
+            """
+            ]
+        , div
             [ style "min-height" "100vh"
             , style "min-height" "100dvh"
             , style "width" "100%"
@@ -1021,22 +1045,10 @@ view model =
             , style "padding" "env(safe-area-inset-top, 10px) env(safe-area-inset-right, 10px) env(safe-area-inset-bottom, 10px) env(safe-area-inset-left, 10px)"
             , style "box-sizing" "border-box"
             , style "position" "relative"
+            , style "letter-spacing" "1px"
+            , style "line-height" "1.5"
             ]
-            ([ Html.node "style"
-                []
-                [ text """
-                    @keyframes thinking {
-                        0%, 100% { opacity: 0.3; transform: scale(0.8); }
-                        50% { opacity: 1; transform: scale(1.2); }
-                    }
-                    @keyframes blink {
-                        0% { opacity: 0.5; }
-                        50% { opacity: 1; }
-                        100% { opacity: 0.5; }
-                    }
-                """
-                ]
-             , viewLanguageSelector model
+            ([ viewLanguageSelector model
              , case model.route of
                 Home ->
                     viewHome model
@@ -1053,9 +1065,9 @@ view model =
 viewGameButton : Model -> String -> FrontendMsg -> Html FrontendMsg
 viewGameButton model label msg =
     button
-        [ style "padding" "15px 40px"
-        , style "font-size" "1.2em"
-        , style "font-weight" "600"
+        [ style "padding" "15px 20px"
+        , style "font-size" "0.8em"
+        , style "font-family" "inherit"
         , style "background-color"
             (if model.darkMode then
                 Color.darkSecondaryBackground
@@ -1095,13 +1107,14 @@ viewHome model =
         [ h1
             [ style "margin" "0 0 20px 0"
             , style "color" (Color.getText model.darkMode)
-            , style "font-size" "2.5em"
+            , style "font-size" "1.5em"
             ]
             [ text t.welcome ]
         , p
             [ style "color" (Color.getText model.darkMode)
             , style "margin-bottom" "30px"
             , style "line-height" "1.6"
+            , style "font-size" "0.7em"
             ]
             [ text t.description ]
         , div
@@ -1195,6 +1208,7 @@ viewGame model mode =
             [ div
                 [ style "font-weight" "600"
                 , style "font-size" "1.2em"
+                , style "font-family" "inherit"
                 ]
                 [ text <|
                     case mode of
@@ -1227,6 +1241,36 @@ viewGame model mode =
             , style "margin-bottom" "15px"
             ]
             [ viewBigBoard model ]
+        , case mode of
+            WithBot _ ->
+                button
+                    [ style "padding" "12px"
+                    , style "font-size" "0.8em"
+                    , style "font-family" "inherit"
+                    , style "background-color"
+                        (if model.board.currentPlayer == X && model.board.winner == Nothing && not model.botThinking then
+                            Color.primary
+
+                         else
+                            Color.disabled
+                        )
+                    , style "color" "white"
+                    , style "border" "none"
+                    , style "border-radius" "10px"
+                    , style "cursor"
+                        (if model.board.currentPlayer == X && model.board.winner == Nothing && not model.botThinking then
+                            "pointer"
+
+                         else
+                            "not-allowed"
+                        )
+                    , style "transition" "all 0.2s ease"
+                    , onClick PlayForMe
+                    ]
+                    [ text t.playForMe ]
+
+            _ ->
+                text ""
         , div
             [ style "display" "flex"
             , style "gap" "10px"
@@ -1295,8 +1339,8 @@ viewGame model mode =
             [ button
                 [ style "flex" "1"
                 , style "padding" "12px"
-                , style "font-size" "clamp(12px, 2vmin, 16px)"
-                , style "font-weight" "600"
+                , style "font-size" "0.8em"
+                , style "font-family" "inherit"
                 , style "background-color" Color.danger
                 , style "color" "white"
                 , style "border" "none"
@@ -1306,24 +1350,6 @@ viewGame model mode =
                 , onClick ReturnToMenu
                 ]
                 [ text t.backToMenu ]
-            , if showPlayForMeButton then
-                button
-                    [ style "flex" "1"
-                    , style "padding" "12px"
-                    , style "font-size" "clamp(12px, 2vmin, 16px)"
-                    , style "font-weight" "600"
-                    , style "background-color" Color.primary
-                    , style "color" "white"
-                    , style "border" "none"
-                    , style "border-radius" "10px"
-                    , style "cursor" "pointer"
-                    , style "transition" "all 0.2s ease"
-                    , onClick PlayForMe
-                    ]
-                    [ text t.playForMe ]
-
-              else
-                text ""
             ]
         ]
 
@@ -1366,6 +1392,7 @@ viewBotDifficultyMenu model =
                         , style "border" "none"
                         , style "border-radius" "6px"
                         , style "cursor" "pointer"
+                        , style "font-family" "inherit"
                         , onClick (StartWithPlayer True)
                         ]
                         [ text t.humanStarts ]
@@ -1378,6 +1405,7 @@ viewBotDifficultyMenu model =
                         , style "border" "none"
                         , style "border-radius" "6px"
                         , style "cursor" "pointer"
+                        , style "font-family" "inherit"
                         , onClick (StartWithPlayer False)
                         ]
                         [ text t.botStarts ]
@@ -1407,8 +1435,8 @@ viewDifficultyButton : Model -> String -> BotDifficulty -> Html FrontendMsg
 viewDifficultyButton model label difficulty =
     button
         [ style "padding" "12px"
-        , style "font-size" "1.1em"
-        , style "font-weight" "600"
+        , style "font-size" "0.8em"
+        , style "font-family" "inherit"
         , style "background-color"
             (if model.selectedDifficulty == Just difficulty then
                 Color.success
@@ -1439,8 +1467,7 @@ viewStatus model =
     div
         [ style "margin" "10px 0"
         , style "color" (Color.getText model.darkMode)
-        , style "font-size" "clamp(0.9em, 2.5vmin, 1.2em)"
-        , style "font-weight" "600"
+        , style "font-size" "0.7em"
         ]
         [ div
             [ style "display" "flex"
@@ -1523,6 +1550,7 @@ viewDarkModeButton isDark =
         , style "display" "flex"
         , style "align-items" "center"
         , style "justify-content" "center"
+        , style "font-family" "inherit"
         , style "color"
             (if isDark then
                 Color.darkTextHover
@@ -1547,29 +1575,27 @@ viewLanguageButton : String -> Language -> Bool -> Bool -> Html FrontendMsg
 viewLanguageButton label lang isActive isDark =
     button
         [ style "padding" "8px 12px"
-        , style "font-size" "0.9em"
-        , style "font-weight" "600"
+        , style "font-size" "0.7em"
+        , style "font-family" "inherit"
         , style "background-color"
             (if isActive then
                 Color.primary
 
-             else
-                if isDark then
-                    Color.darkSecondaryBackground
+             else if isDark then
+                Color.darkSecondaryBackground
 
-                else
-                    Color.lightBorder
+             else
+                Color.lightBorder
             )
         , style "color"
             (if isActive then
                 "white"
 
-             else
-                if isDark then
-                    Color.darkText
+             else if isDark then
+                Color.darkText
 
-                else
-                    Color.lightText
+             else
+                Color.lightText
             )
         , style "border" "none"
         , style "border-radius" "6px"
@@ -1597,11 +1623,13 @@ viewBigBoard model =
     div
         ([ style "display" "grid"
          , style "grid-template-columns" "repeat(3, 1fr)"
-         , style "gap" "10px"
+         , style "gap" "4px"
          , style "width" "min(70vh, 100%)"
          , style "aspect-ratio" "1/1"
          , style "margin" "0 auto"
-         , style "padding" "2px"
+         , style "padding" "4px"
+         , style "background-color" (Color.getBorder model.darkMode)
+         , style "border-radius" "12px"
          ]
             ++ (if shouldBlink then
                     [ style "animation" "blink 1s ease-in-out infinite" ]
@@ -1664,7 +1692,7 @@ viewSmallBoard model boardIndex smallBoard =
          , style "border-radius" "8px"
          , style "display" "grid"
          , style "grid-template-columns" "repeat(3, 1fr)"
-         , style "gap" "2px"
+         , style "gap" "0"
          , style "padding" "4px"
          , style "aspect-ratio" "1/1"
          , style "box-shadow" ("0 0 0 2px " ++ borderColor)
@@ -1682,28 +1710,53 @@ viewSmallBoard model boardIndex smallBoard =
 viewCell : Model -> Int -> Bool -> List (Html.Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
 viewCell model boardIndex isClickable cellStyles cellIndex cellState =
     let
-        symbol =
+        ( symbol, textColor, bgColor ) =
             case cellState of
                 Empty ->
-                    ""
+                    ( Html.text ""
+                    , if model.darkMode then
+                        Color.darkText
+
+                      else
+                        Color.lightText
+                    , if model.darkMode then
+                        Color.darkBackground
+
+                      else
+                        Color.lightBackground
+                    )
 
                 Filled X ->
-                    "×"
-
-                Filled O ->
-                    "○"
-
-        ( textColor, bgColor ) =
-            case cellState of
-                Empty ->
-                    if model.darkMode then
-                        ( Color.darkText, Color.darkBackground )
-
-                    else
-                        ( Color.lightText, Color.lightBackground )
-
-                Filled X ->
-                    ( Color.danger
+                    ( div [ style "width" "100%", style "height" "100%", style "position" "relative" ]
+                        [ svg
+                            [ Svg.Attributes.viewBox "0 0 100 100"
+                            , Svg.Attributes.width "100%"
+                            , Svg.Attributes.height "100%"
+                            , Svg.Attributes.fill "none"
+                            , Svg.Attributes.stroke Color.danger
+                            , Svg.Attributes.strokeWidth "10"
+                            , Svg.Attributes.strokeLinecap "round"
+                            , style "position" "absolute"
+                            , style "top" "0"
+                            , style "left" "0"
+                            ]
+                            [ line
+                                [ Svg.Attributes.x1 "20"
+                                , Svg.Attributes.y1 "20"
+                                , Svg.Attributes.x2 "80"
+                                , Svg.Attributes.y2 "80"
+                                ]
+                                []
+                            , line
+                                [ Svg.Attributes.x1 "80"
+                                , Svg.Attributes.y1 "20"
+                                , Svg.Attributes.x2 "20"
+                                , Svg.Attributes.y2 "80"
+                                ]
+                                []
+                            ]
+                        ]
+                    , Color.danger
                     , if model.darkMode then
                         Color.darkBackground
 
@@ -1712,7 +1765,28 @@ viewCell model boardIndex isClickable cellStyles cellIndex cellState =
                     )
 
                 Filled O ->
-                    ( Color.primary
+                    ( div [ style "width" "100%", style "height" "100%", style "position" "relative" ]
+                        [ svg
+                            [ Svg.Attributes.viewBox "0 0 100 100"
+                            , Svg.Attributes.width "100%"
+                            , Svg.Attributes.height "100%"
+                            , Svg.Attributes.fill "none"
+                            , Svg.Attributes.stroke Color.primary
+                            , Svg.Attributes.strokeWidth "10"
+                            , Svg.Attributes.strokeLinecap "round"
+                            , style "position" "absolute"
+                            , style "top" "0"
+                            , style "left" "0"
+                            ]
+                            [ circle
+                                [ Svg.Attributes.cx "50"
+                                , Svg.Attributes.cy "50"
+                                , Svg.Attributes.r "35"
+                                ]
+                                []
+                            ]
+                        ]
+                    , Color.primary
                     , if model.darkMode then
                         Color.darkBackground
 
@@ -1729,6 +1803,28 @@ viewCell model boardIndex isClickable cellStyles cellIndex cellState =
 
             else
                 "default"
+
+        -- Add border radius only to corner cells
+        cornerRadius =
+            case cellIndex of
+                0 ->
+                    -- Top left
+                    [ style "border-top-left-radius" "4px" ]
+
+                2 ->
+                    -- Top right
+                    [ style "border-top-right-radius" "4px" ]
+
+                6 ->
+                    -- Bottom left
+                    [ style "border-bottom-left-radius" "4px" ]
+
+                8 ->
+                    -- Bottom right
+                    [ style "border-bottom-right-radius" "4px" ]
+
+                _ ->
+                    []
     in
     div
         ([ style "width" "100%"
@@ -1737,13 +1833,12 @@ viewCell model boardIndex isClickable cellStyles cellIndex cellState =
          , style "display" "flex"
          , style "align-items" "center"
          , style "justify-content" "center"
-         , style "font-size" "clamp(2em, 8vmin, 4em)"
-         , style "font-weight" "bold"
          , style "cursor" cursor
          , style "color" textColor
          , style "user-select" "none"
-         , style "border-radius" "4px"
+         , style "position" "relative"
          ]
+            ++ cornerRadius
             ++ cellStyles
             ++ (if isCellClickable then
                     [ onClick (CellClicked boardIndex cellIndex) ]
@@ -1752,16 +1847,7 @@ viewCell model boardIndex isClickable cellStyles cellIndex cellState =
                     [ style "pointer-events" "none" ]
                )
         )
-        [ div
-            [ style "width" "100%"
-            , style "height" "100%"
-            , style "display" "flex"
-            , style "align-items" "center"
-            , style "justify-content" "center"
-            , style "line-height" "0"
-            ]
-            [ text symbol ]
-        ]
+        [ symbol ]
 
 
 subscriptions : Model -> Sub FrontendMsg
@@ -1902,7 +1988,7 @@ viewRulesModal model =
             [ h2
                 [ style "margin" "0 0 20px 0"
                 , style "color" (Color.getText model.darkMode)
-                , style "font-size" "1.8em"
+                , style "font-size" "1.2em"
                 ]
                 [ text t.rulesTitle ]
             , pre
@@ -1912,12 +1998,13 @@ viewRulesModal model =
                 , style "text-align" "left"
                 , style "line-height" "1.6"
                 , style "margin" "0 0 20px 0"
+                , style "font-size" "0.7em"
                 ]
                 [ text t.rulesText ]
             , button
                 [ style "padding" "12px 30px"
-                , style "font-size" "1.1em"
-                , style "font-weight" "600"
+                , style "font-size" "0.8em"
+                , style "font-family" "inherit"
                 , style "background-color" Color.primary
                 , style "color" "white"
                 , style "border" "none"
