@@ -1069,7 +1069,7 @@ viewCell board boardIndex cellIndex cellState =
         , style "display" "flex"
         , style "align-items" "center"
         , style "justify-content" "center"
-        , style "font-size" "200%"
+        , style "font-size" "clamp(2em, 8vmin, 4em)"
         , style "font-weight" "bold"
         , style "cursor" (if cellState == Empty then "pointer" else "default")
         , style "color" textColor
