@@ -890,7 +890,12 @@ view model =
             [ style "min-height" "100vh"
             , style "min-height" "100dvh"
             , style "width" "100%"
-            , style "background" "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)"
+            , style "background" (
+                if model.darkMode then
+                    "linear-gradient(135deg, #111111 0%, #1a1f24 100%)"
+                else
+                    "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)"
+              )
             , style "display" "flex"
             , style "align-items" "center"
             , style "justify-content" "center"
