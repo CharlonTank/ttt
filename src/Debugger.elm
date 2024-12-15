@@ -1,14 +1,14 @@
 module Debugger exposing (view)
 
+import Color
+import Debug
+import Dict
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
-import Types exposing (..)
 import I18n exposing (playerToString)
 import Json.Decode as D
-import Debug
-import Dict
-import Color
+import Types exposing (..)
 
 
 boardToString : BigBoard -> String
@@ -17,51 +17,75 @@ boardToString board =
         cellStateToString : CellState -> String
         cellStateToString state =
             case state of
-                Empty -> "Empty"
-                Filled player -> 
+                Empty ->
+                    "Empty"
+
+                Filled player ->
                     case player of
-                        X -> "X"
-                        O -> "O"
+                        X ->
+                            "X"
+
+                        O ->
+                            "O"
 
         smallBoardToString : SmallBoard -> String
         smallBoardToString smallBoard =
-            "{ cells = [" ++ 
-            (String.join ", " (List.map cellStateToString smallBoard.cells)) ++
-            "], winner = " ++
-            (case smallBoard.winner of
-                Nothing -> "Nothing"
-                Just player -> 
-                    case player of
-                        X -> "Just X"
-                        O -> "Just O"
-            ) ++ " }"
+            "{ cells = ["
+                ++ String.join ", " (List.map cellStateToString smallBoard.cells)
+                ++ "], winner = "
+                ++ (case smallBoard.winner of
+                        Nothing ->
+                            "Nothing"
+
+                        Just player ->
+                            case player of
+                                X ->
+                                    "Just X"
+
+                                O ->
+                                    "Just O"
+                   )
+                ++ " }"
     in
-    "{ boards = [" ++
-    (String.join ",\n  " (List.map smallBoardToString board.boards)) ++
-    "],\n  currentPlayer = " ++
-    (case board.currentPlayer of
-        X -> "X"
-        O -> "O"
-    ) ++
-    ",\n  activeBoard = " ++
-    (case board.activeBoard of
-        Nothing -> "Nothing"
-        Just n -> "Just " ++ String.fromInt n
-    ) ++
-    ",\n  winner = " ++
-    (case board.winner of
-        Nothing -> "Nothing"
-        Just player -> 
-            case player of
-                X -> "Just X"
-                O -> "Just O"
-    ) ++ " }"
+    "{ boards = ["
+        ++ String.join ",\n  " (List.map smallBoardToString board.boards)
+        ++ "],\n  currentPlayer = "
+        ++ (case board.currentPlayer of
+                X ->
+                    "X"
+
+                O ->
+                    "O"
+           )
+        ++ ",\n  activeBoard = "
+        ++ (case board.activeBoard of
+                Nothing ->
+                    "Nothing"
+
+                Just n ->
+                    "Just " ++ String.fromInt n
+           )
+        ++ ",\n  winner = "
+        ++ (case board.winner of
+                Nothing ->
+                    "Nothing"
+
+                Just player ->
+                    case player of
+                        X ->
+                            "Just X"
+
+                        O ->
+                            "Just O"
+           )
+        ++ " }"
 
 
 boolToString : Bool -> String
 boolToString bool =
     if bool then
         "true"
+
     else
         "false"
 
@@ -95,23 +119,29 @@ view model =
                 , style "align-items" "center"
                 , style "margin-bottom" "10px"
                 , style "user-select" "none"
-                , style "cursor" (if model.isDraggingDebugger then "grabbing" else "grab")
-                , Html.Events.on "mousedown" 
+                , style "cursor"
+                    (if model.isDraggingDebugger then
+                        "grabbing"
+
+                     else
+                        "grab"
+                    )
+                , Html.Events.on "mousedown"
                     (D.map2 StartDraggingDebugger
                         (D.field "clientX" D.float)
                         (D.field "clientY" D.float)
                     )
                 , Html.Events.preventDefaultOn "touchstart"
-                    (D.map2 
+                    (D.map2
                         (\x y -> ( StartDraggingDebugger x y, True ))
-                        (D.at ["touches", "0", "clientX"] D.float)
-                        (D.at ["touches", "0", "clientY"] D.float)
+                        (D.at [ "touches", "0", "clientX" ] D.float)
+                        (D.at [ "touches", "0", "clientY" ] D.float)
                     )
                 , Html.Events.preventDefaultOn "touchmove"
-                    (D.map2 
+                    (D.map2
                         (\x y -> ( DragDebugger x y, True ))
-                        (D.at ["touches", "0", "clientX"] D.float)
-                        (D.at ["touches", "0", "clientY"] D.float)
+                        (D.at [ "touches", "0", "clientX" ] D.float)
+                        (D.at [ "touches", "0", "clientY" ] D.float)
                     )
                 , Html.Events.preventDefaultOn "touchend"
                     (D.succeed ( StopDraggingDebugger, True ))
@@ -135,7 +165,7 @@ view model =
                 ]
                 [ text "Local Storage:\n"
                 , Dict.toList model.localStorageValues
-                    |> List.map (\(key, value) -> text <| key ++ ": " ++ value ++ "\n")
+                    |> List.map (\( key, value ) -> text <| key ++ ": " ++ value ++ "\n")
                     |> div []
                 , text "\nModel State:\n"
                 , text <| "language: " ++ languageToString model.language ++ "\n"
@@ -146,14 +176,25 @@ view model =
                 , text <| "Current Move Index: " ++ String.fromInt model.currentMoveIndex ++ "\n"
                 , text <| "Total Moves: " ++ String.fromInt (List.length model.moveHistory) ++ "\n"
                 , text "History:\n"
-                , List.indexedMap 
-                    (\i move -> 
-                        text <| String.fromInt i ++ ": " ++ 
-                        (if i == model.currentMoveIndex then "→ " else "  ") ++
-                        "Board " ++ String.fromInt move.boardIndex ++ 
-                        ", Cell " ++ String.fromInt move.cellIndex ++ 
-                        " (" ++ playerToString model.language move.player ++ ")\n"
-                    ) 
+                , List.indexedMap
+                    (\i move ->
+                        text <|
+                            String.fromInt i
+                                ++ ": "
+                                ++ (if i == model.currentMoveIndex then
+                                        "→ "
+
+                                    else
+                                        "  "
+                                   )
+                                ++ "Board "
+                                ++ String.fromInt move.boardIndex
+                                ++ ", Cell "
+                                ++ String.fromInt move.cellIndex
+                                ++ " ("
+                                ++ playerToString model.language move.player
+                                ++ ")\n"
+                    )
                     model.moveHistory
                     |> div []
                 ]
@@ -170,10 +211,10 @@ view model =
                 , Html.Events.preventDefaultOn "touchstart"
                     (D.succeed ( StartResizingDebugger, True ))
                 , Html.Events.preventDefaultOn "touchmove"
-                    (D.map2 
+                    (D.map2
                         (\x y -> ( ResizeDebugger x y, True ))
-                        (D.at ["touches", "0", "clientX"] D.float)
-                        (D.at ["touches", "0", "clientY"] D.float)
+                        (D.at [ "touches", "0", "clientX" ] D.float)
+                        (D.at [ "touches", "0", "clientY" ] D.float)
                     )
                 , Html.Events.preventDefaultOn "touchend"
                     (D.succeed ( StopResizingDebugger, True ))
@@ -181,5 +222,6 @@ view model =
                 []
             ]
         ]
+
     else
-        [] 
+        []

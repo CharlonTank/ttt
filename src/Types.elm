@@ -2,16 +2,25 @@ port module Types exposing (..)
 
 import Browser exposing (UrlRequest)
 import Browser.Navigation exposing (Key)
-import Url exposing (Url)
-import Json.Encode as E
-import Json.Decode as D
 import Dict exposing (Dict)
+import Json.Decode as D
+import Json.Encode as E
+import Url exposing (Url)
+
 
 
 -- PORTS
+
+
 port storeLocalStorage_ : String -> Cmd msg
+
+
 port receiveLocalStorage_ : (String -> msg) -> Sub msg
+
+
 port getLocalStorageValue_ : String -> Cmd msg
+
+
 port receiveLocalStorageValue_ : (String -> msg) -> Sub msg
 
 
@@ -88,6 +97,7 @@ type alias FrontendModel =
     , isResizingDebugger : Bool
     , localStorageValues : Dict String String
     , selectedDifficulty : Maybe BotDifficulty
+    , rulesModalVisible : Bool
     }
 
 
@@ -124,6 +134,7 @@ type FrontendMsg
     | ReceivedLocalStorageValue String String
     | StartWithPlayer Bool
     | PlayForMe
+    | ToggleRulesModal
 
 
 type ToBackend
@@ -138,16 +149,25 @@ type ToFrontend
     = NoOpToFrontend
 
 
+
 -- HELPERS
+
+
 languageToString : Language -> String
 languageToString lang =
     case lang of
-        FR -> "FR"
-        EN -> "EN"
+        FR ->
+            "FR"
+
+        EN ->
+            "EN"
 
 
 stringToLanguage : String -> Language
 stringToLanguage str =
     case str of
-        "EN" -> EN
-        _ -> FR
+        "EN" ->
+            EN
+
+        _ ->
+            FR

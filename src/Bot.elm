@@ -1,31 +1,37 @@
 module Bot exposing (findBestMove)
 
-import Types exposing (..)
 import List.Extra as List
+import Types exposing (..)
 
 
-findBestMove : BigBoard -> BotDifficulty -> Maybe (Int, Int)
+findBestMove : BigBoard -> BotDifficulty -> Maybe ( Int, Int )
 findBestMove board difficulty =
     let
         availableMoves =
             getAllAvailableMoves board
 
         isFirstMove =
-            List.all (\smallBoard -> 
-                List.all ((==) Empty) smallBoard.cells
-            ) board.boards
+            List.all
+                (\smallBoard ->
+                    List.all ((==) Empty) smallBoard.cells
+                )
+                board.boards
 
         depthForDifficulty =
             case difficulty of
                 Easy ->
                     2
+
                 Medium ->
                     3
+
                 Hard ->
                     4
+
                 Elite ->
                     if isFirstMove then
                         4
+
                     else
                         5
 
@@ -44,12 +50,17 @@ findBestMove board difficulty =
                             case difficulty of
                                 Easy ->
                                     modBy 200 (boardIdx * 17 + cellIdx * 13)
+
                                 Medium ->
                                     modBy 100 (boardIdx * 11 + cellIdx * 7)
+
                                 Hard ->
                                     modBy 50 (boardIdx * 7 + cellIdx * 5)
+
                                 Elite ->
-                                    modBy 10 (boardIdx * 3 + cellIdx * 2)  -- Petit facteur aléatoire pour Elite
+                                    modBy 10 (boardIdx * 3 + cellIdx * 2)
+
+                        -- Petit facteur aléatoire pour Elite
                     in
                     ( ( boardIdx, cellIdx ), baseScore + randomFactor )
                 )
@@ -59,17 +70,25 @@ findBestMove board difficulty =
         shouldChooseRandom =
             case difficulty of
                 Easy ->
-                    modBy 3 (List.length availableMoves) == 0  -- 33% chance
-                Medium ->
-                    modBy 5 (List.length availableMoves) == 0  -- 20% chance
-                Hard ->
-                    modBy 10 (List.length availableMoves) == 0  -- 10% chance
-                Elite ->
-                    modBy 20 (List.length availableMoves) == 0  -- 5% chance
+                    modBy 3 (List.length availableMoves) == 0
 
+                -- 33% chance
+                Medium ->
+                    modBy 5 (List.length availableMoves) == 0
+
+                -- 20% chance
+                Hard ->
+                    modBy 10 (List.length availableMoves) == 0
+
+                -- 10% chance
+                Elite ->
+                    modBy 20 (List.length availableMoves) == 0
+
+        -- 5% chance
         bestMove =
             if shouldChooseRandom then
                 List.getAt (modBy (List.length availableMoves) (List.length moveScores)) availableMoves
+
             else
                 List.sortBy Tuple.second moveScores
                     |> List.reverse
@@ -84,15 +103,20 @@ alphabeta board depth alpha beta isMaximizing =
     case board.winner of
         Just winner ->
             if winner == O then
-                1000 + depth  -- Bot wins (O)
-            else
-                -1000 - depth  -- Player wins (X)
+                1000 + depth
+                -- Bot wins (O)
 
+            else
+                -1000 - depth
+
+        -- Player wins (X)
         Nothing ->
             if depth == 0 then
                 evaluatePosition board O
+
             else if isMaximizing then
                 alphabetaMax board depth alpha beta
+
             else
                 alphabetaMin board depth alpha beta
 
@@ -125,6 +149,7 @@ alphabetaMax board depth alpha beta =
                     if beta <= newAlpha then
                         -- Beta cutoff
                         newBestScore
+
                     else
                         helper rest newAlpha newBestScore
     in
@@ -159,6 +184,7 @@ alphabetaMin board depth alpha beta =
                     if newBeta <= alpha then
                         -- Alpha cutoff
                         newBestScore
+
                     else
                         helper rest newBeta newBestScore
     in
@@ -178,27 +204,44 @@ evaluatePosition board forPlayer =
                             List.count (\cell -> cell == Filled forPlayer) line
 
                         opponentCount =
-                            List.count (\cell -> 
-                                case cell of
-                                    Filled p -> p /= forPlayer
-                                    Empty -> False
-                            ) line
+                            List.count
+                                (\cell ->
+                                    case cell of
+                                        Filled p ->
+                                            p /= forPlayer
+
+                                        Empty ->
+                                            False
+                                )
+                                line
 
                         emptyCount =
                             List.count ((==) Empty) line
                     in
                     if playerCount == 3 then
-                        100  -- Winning line
+                        100
+                        -- Winning line
+
                     else if opponentCount == 3 then
-                        -100  -- Opponent winning line
+                        -100
+                        -- Opponent winning line
+
                     else if playerCount == 2 && emptyCount == 1 then
-                        20   -- Two in a row with potential
+                        20
+                        -- Two in a row with potential
+
                     else if opponentCount == 2 && emptyCount == 1 then
-                        -20  -- Block opponent's potential win
+                        -20
+                        -- Block opponent's potential win
+
                     else if playerCount == 1 && emptyCount == 2 then
-                        2    -- One with potential
+                        2
+                        -- One with potential
+
                     else if opponentCount == 1 && emptyCount == 2 then
-                        -2   -- Opponent one with potential
+                        -2
+                        -- Opponent one with potential
+
                     else
                         0
 
@@ -234,7 +277,9 @@ evaluatePosition board forPlayer =
                     case centerBoard.winner of
                         Just winner ->
                             if winner == forPlayer then
-                                200  -- Increased importance of center
+                                200
+                                -- Increased importance of center
+
                             else
                                 -200
 
@@ -245,6 +290,7 @@ evaluatePosition board forPlayer =
                                         Just (Filled player) ->
                                             if player == forPlayer then
                                                 50
+
                                             else
                                                 -50
 
@@ -269,7 +315,9 @@ evaluatePosition board forPlayer =
                     case smallBoard.winner of
                         Just winner ->
                             if winner == forPlayer then
-                                100  -- Increased importance of corners
+                                100
+                                -- Increased importance of corners
+
                             else
                                 -100
 
@@ -283,19 +331,24 @@ evaluatePosition board forPlayer =
             case board.activeBoard of
                 Just nextBoardIndex ->
                     if nextBoardIndex == 4 then
-                        -50  -- Penalize sending opponent to center
-                    else if List.member nextBoardIndex [ 0, 2, 6, 8 ] then
-                        -30  -- Penalize sending opponent to corners
-                    else
-                        20   -- Bonus for sending opponent to less strategic boards
+                        -50
+                        -- Penalize sending opponent to center
 
+                    else if List.member nextBoardIndex [ 0, 2, 6, 8 ] then
+                        -30
+                        -- Penalize sending opponent to corners
+
+                    else
+                        20
+
+                -- Bonus for sending opponent to less strategic boards
                 Nothing ->
                     0
     in
     List.sum boardScores + centerBoardBonus + cornerBoardsBonus + strategicBonus
 
 
-getAllAvailableMoves : BigBoard -> List (Int, Int)
+getAllAvailableMoves : BigBoard -> List ( Int, Int )
 getAllAvailableMoves board =
     let
         validBoardIndexes =
@@ -343,6 +396,7 @@ makeMove board boardIndex cellIndex =
                 (\i cell ->
                     if i == index then
                         Filled board.currentPlayer
+
                     else
                         cell
                 )
@@ -360,6 +414,7 @@ makeMove board boardIndex cellIndex =
                             | cells = updatedCells
                             , winner = checkWinner updatedCells
                         }
+
                     else
                         smallBoard
                 )
@@ -380,6 +435,7 @@ makeMove board boardIndex cellIndex =
         nextActiveBoard =
             if isSmallBoardComplete (List.drop cellIndex updatedBoards |> List.head |> Maybe.withDefault emptySmallBoard) then
                 Nothing
+
             else
                 Just cellIndex
     in
@@ -411,10 +467,12 @@ checkWinner cells =
               [ 0, 1, 2 ]
             , [ 3, 4, 5 ]
             , [ 6, 7, 8 ]
+
             -- Columns
             , [ 0, 3, 6 ]
             , [ 1, 4, 7 ]
             , [ 2, 5, 8 ]
+
             -- Diagonals
             , [ 0, 4, 8 ]
             , [ 2, 4, 6 ]
@@ -428,6 +486,7 @@ checkWinner cells =
                 (Filled player) :: rest ->
                     if List.all ((==) (Filled player)) rest then
                         Just player
+
                     else
                         Nothing
 
@@ -449,10 +508,12 @@ checkBigBoardWinner boards =
               [ 0, 1, 2 ]
             , [ 3, 4, 5 ]
             , [ 6, 7, 8 ]
+
             -- Columns
             , [ 0, 3, 6 ]
             , [ 1, 4, 7 ]
             , [ 2, 5, 8 ]
+
             -- Diagonals
             , [ 0, 4, 8 ]
             , [ 2, 4, 6 ]
@@ -466,6 +527,7 @@ checkBigBoardWinner boards =
                 (Just player) :: rest ->
                     if List.all ((==) (Just player)) rest then
                         Just player
+
                     else
                         Nothing
 
@@ -473,4 +535,4 @@ checkBigBoardWinner boards =
                     Nothing
     in
     List.filterMap checkCombination winningCombinations
-        |> List.head 
+        |> List.head

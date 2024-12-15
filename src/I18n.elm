@@ -1,4 +1,4 @@
-module I18n exposing (Translation, translations, playerToString)
+module I18n exposing (Translation, playerToString, translations)
 
 import Types exposing (Language(..), Player(..))
 
@@ -25,6 +25,10 @@ type alias Translation =
     , humanStarts : String
     , botStarts : String
     , playForMe : String
+    , rules : String
+    , rulesTitle : String
+    , rulesText : String
+    , close : String
     }
 
 
@@ -53,6 +57,16 @@ translations lang =
             , humanStarts = "Vous commencez"
             , botStarts = "Le bot commence"
             , playForMe = "Jouer à ma place"
+            , rules = "Règles du jeu"
+            , rulesTitle = "Comment jouer"
+            , rulesText = """Le Ultimate Tic Tac Toe est une version avancée du morpion classique. Voici les règles :
+
+1. Le plateau est composé de 9 petits morpions.
+2. À votre tour, vous devez jouer dans le petit morpion correspondant à la case où votre adversaire a joué.
+3. Si vous êtes envoyé dans un morpion déjà gagné ou plein, vous pouvez jouer dans n'importe quel morpion disponible.
+4. Pour gagner, vous devez aligner 3 morpions gagnés (horizontalement, verticalement ou en diagonale).
+5. Les cases gagnées par X sont marquées en rouge, celles gagnées par O en bleu."""
+            , close = "Fermer"
             }
 
         EN ->
@@ -77,6 +91,16 @@ translations lang =
             , humanStarts = "You start"
             , botStarts = "Bot starts"
             , playForMe = "Play for me"
+            , rules = "Game Rules"
+            , rulesTitle = "How to Play"
+            , rulesText = """Ultimate Tic Tac Toe is an advanced version of the classic game. Here are the rules:
+
+1. The board consists of 9 small tic-tac-toe boards.
+2. On your turn, you must play in the small board corresponding to the cell where your opponent played.
+3. If you are sent to a board that is already won or full, you can play in any available board.
+4. To win, you must align 3 won boards (horizontally, vertically, or diagonally).
+5. Cells won by X are marked in red, those won by O in blue."""
+            , close = "Close"
             }
 
 
@@ -87,11 +111,14 @@ playerToString lang player =
             case player of
                 X ->
                     "Joueur X"
+
                 O ->
                     "Joueur O"
+
         EN ->
             case player of
                 X ->
                     "Player X"
+
                 O ->
-                    "Player O" 
+                    "Player O"
