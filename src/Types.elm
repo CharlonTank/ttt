@@ -123,6 +123,7 @@ type FrontendMsg
     | NoOp
     | ReceivedLocalStorageValue String String
     | StartWithPlayer Bool
+    | PlayForMe
 
 
 type ToBackend

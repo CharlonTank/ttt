@@ -227,6 +227,38 @@ update msg model =
         CancelBotDifficulty ->
             ( { model | botDifficultyMenuOpen = False }, Cmd.none )
 
+        PlayForMe ->
+            case model.route of
+                Game (WithBot _) ->
+                    if model.board.currentPlayer == X && model.board.winner == Nothing then
+                        let
+                            botMove =
+                                Bot.findBestMove model.board Elite
+
+                            ( newModel, cmd ) =
+                                case botMove of
+                                    Just ( boardIdx, cellIdx ) ->
+                                        let
+                                            (modelAfterMove, moveCmd) = handlePlayerMove model boardIdx cellIdx
+                                        in
+                                        if modelAfterMove.board.winner == Nothing then
+                                            -- Schedule bot's move and show thinking state
+                                            ( { modelAfterMove | botThinking = True }
+                                            , Cmd.batch [ moveCmd, Task.perform (always BotMove) (Process.sleep 500) ]
+                                            )
+                                        else
+                                            ( modelAfterMove, moveCmd )
+
+                                    Nothing ->
+                                        ( model, Cmd.none )
+                        in
+                        ( newModel, cmd )
+                    else
+                        ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
         ChangeLanguage lang ->
             let
                 newModel =
@@ -1027,39 +1059,39 @@ viewGame model mode =
                         []
                 Nothing ->
                     []
+
+        showPlayForMeButton =
+            case mode of
+                WithBot _ ->
+                    model.board.currentPlayer == X && model.board.winner == Nothing
+                _ ->
+                    False
     in
     div 
         ([ style "border-radius" "20px"
         , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
-        , style "width" "min(95vw, 90vh)"
+        , style "padding" "20px"
+        , style "background-color" (Color.getBackground model.darkMode)
         , style "display" "flex"
         , style "flex-direction" "column"
-        , style "box-sizing" "border-box"
-        , style "overflow" "hidden"
-        , style "padding" "20px"
+        , style "gap" "15px"
+        , style "max-width" "90vw"
+        , style "width" "fit-content"
         ] ++ darkModeStyles)
-        [ div 
-            [ style "text-align" "center"
-            , style "margin-bottom" "15px"
+        [ div
+            [ style "display" "flex"
+            , style "flex-direction" "column"
+            , style "gap" "5px"
             ]
-            [ h1 
-                [ style "margin" "0"
-                , style "font-size" "clamp(1.2em, 3vmin, 2em)"
-                , style "font-weight" "700"
-                ] 
-                [ text t.welcome ]
-            , div
-                [ style "display" "flex"
-                , style "justify-content" "center"
-                , style "align-items" "center"
-                , style "gap" "10px"
-                , style "margin-top" "10px"
-                , style "font-size" "0.9em"
+            [ div
+                [ style "font-weight" "600"
+                , style "font-size" "1.2em"
                 ]
-                [ text <| 
+                [ text <|
                     case mode of
                         WithFriend ->
                             t.playingWithFriend
+
                         WithBot difficulty ->
                             t.playingWithBot <|
                                 case difficulty of
@@ -1102,6 +1134,23 @@ viewGame model mode =
                 , onClick ReturnToMenu
                 ]
                 [ text t.backToMenu ]
+            , if showPlayForMeButton then
+                button
+                    [ style "flex" "1"
+                    , style "padding" "12px"
+                    , style "font-size" "clamp(12px, 2vmin, 16px)"
+                    , style "font-weight" "600"
+                    , style "background-color" Color.primary
+                    , style "color" "white"
+                    , style "border" "none"
+                    , style "border-radius" "10px"
+                    , style "cursor" "pointer"
+                    , style "transition" "all 0.2s ease"
+                    , onClick PlayForMe
+                    ]
+                    [ text t.playForMe ]
+              else
+                text ""
             ]
         , div
             [ style "display" "flex"

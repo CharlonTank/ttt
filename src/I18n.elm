@@ -24,6 +24,7 @@ type alias Translation =
     , playingWithBot : String -> String
     , humanStarts : String
     , botStarts : String
+    , playForMe : String
     }
 
 
@@ -51,6 +52,7 @@ translations lang =
             , playingWithBot = \difficulty -> "Mode : Jeu contre le bot (" ++ difficulty ++ ")"
             , humanStarts = "Vous commencez"
             , botStarts = "Le bot commence"
+            , playForMe = "Jouer à ma place"
             }
 
         EN ->
@@ -74,6 +76,7 @@ translations lang =
             , playingWithBot = \difficulty -> "Mode: Playing against bot (" ++ difficulty ++ ")"
             , humanStarts = "You start"
             , botStarts = "Bot starts"
+            , playForMe = "Play for me"
             }
 
 
