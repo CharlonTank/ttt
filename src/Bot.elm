@@ -10,6 +10,11 @@ findBestMove board difficulty =
         availableMoves =
             getAllAvailableMoves board
 
+        isFirstMove =
+            List.all (\smallBoard -> 
+                List.all ((==) Empty) smallBoard.cells
+            ) board.boards
+
         depthForDifficulty =
             case difficulty of
                 Easy ->
@@ -19,7 +24,10 @@ findBestMove board difficulty =
                 Hard ->
                     4
                 Elite ->
-                    5
+                    if isFirstMove then
+                        4
+                    else
+                        5
 
         moveScores =
             List.map

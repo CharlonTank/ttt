@@ -1,8 +1,18 @@
-module Types exposing (..)
+port module Types exposing (..)
 
 import Browser exposing (UrlRequest)
 import Browser.Navigation exposing (Key)
 import Url exposing (Url)
+import Json.Encode as E
+import Json.Decode as D
+import Dict exposing (Dict)
+
+
+-- PORTS
+port storeLocalStorage_ : String -> Cmd msg
+port receiveLocalStorage_ : (String -> msg) -> Sub msg
+port getLocalStorageValue_ : String -> Cmd msg
+port receiveLocalStorageValue_ : (String -> msg) -> Sub msg
 
 
 type Player
@@ -21,10 +31,17 @@ type alias SmallBoard =
     }
 
 
+type alias Move =
+    { boardIndex : Int
+    , cellIndex : Int
+    , player : Player
+    }
+
+
 type alias BigBoard =
     { boards : List SmallBoard
     , currentPlayer : Player
-    , activeBoard : Maybe Int  -- The board where the next move must be played (Nothing if player can choose any board)
+    , activeBoard : Maybe Int
     , winner : Maybe Player
     }
 
@@ -58,6 +75,19 @@ type alias FrontendModel =
     , botDifficultyMenuOpen : Bool
     , language : Language
     , botThinking : Bool
+    , moveHistory : List Move
+    , currentMoveIndex : Int
+    , darkMode : Bool
+    , humanPlaysFirst : Bool
+    , frClickCount : Int
+    , debuggerVisible : Bool
+    , debuggerPosition : { x : Float, y : Float }
+    , isDraggingDebugger : Bool
+    , dragOffset : { x : Float, y : Float }
+    , debuggerSize : { width : Float, height : Float }
+    , isResizingDebugger : Bool
+    , localStorageValues : Dict String String
+    , selectedDifficulty : Maybe BotDifficulty
     }
 
 
@@ -69,7 +99,7 @@ type alias BackendModel =
 type FrontendMsg
     = UrlClicked UrlRequest
     | UrlChanged Url
-    | CellClicked Int Int  -- First Int is board index (0-8), second is cell index (0-8)
+    | CellClicked Int Int
     | RestartGame
     | StartGameWithFriend
     | StartGameWithBot
@@ -78,6 +108,21 @@ type FrontendMsg
     | ReturnToMenu
     | BotMove
     | ChangeLanguage Language
+    | UndoMove
+    | RedoMove
+    | ToggleDarkMode
+    | ReceivedLocalStorage { language : String, darkMode : Bool }
+    | ToggleDebugMode
+    | CloseDebugger
+    | StartDraggingDebugger Float Float
+    | StopDraggingDebugger
+    | DragDebugger Float Float
+    | StartResizingDebugger
+    | StopResizingDebugger
+    | ResizeDebugger Float Float
+    | NoOp
+    | ReceivedLocalStorageValue String String
+    | StartWithPlayer Bool
 
 
 type ToBackend
@@ -90,3 +135,18 @@ type BackendMsg
 
 type ToFrontend
     = NoOpToFrontend
+
+
+-- HELPERS
+languageToString : Language -> String
+languageToString lang =
+    case lang of
+        FR -> "FR"
+        EN -> "EN"
+
+
+stringToLanguage : String -> Language
+stringToLanguage str =
+    case str of
+        "EN" -> EN
+        _ -> FR

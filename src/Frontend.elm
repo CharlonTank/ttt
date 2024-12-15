@@ -2,6 +2,7 @@ module Frontend exposing (..)
 
 import Browser exposing (UrlRequest(..))
 import Browser.Navigation as Nav
+import Browser.Events
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
@@ -14,6 +15,12 @@ import Url
 import Task
 import Process
 import Debug
+import Json.Encode as E
+import Json.Decode as D
+import String
+import Debugger
+import Dict
+import Color
 
 
 type alias Model =
@@ -27,7 +34,7 @@ app =
         , onUrlChange = UrlChanged
         , update = update
         , updateFromBackend = updateFromBackend
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = subscriptions
         , view = view
         }
 
@@ -40,8 +47,24 @@ init url key =
       , botDifficultyMenuOpen = False
       , language = FR
       , botThinking = False
+      , moveHistory = []
+      , currentMoveIndex = -1
+      , darkMode = False
+      , humanPlaysFirst = True
+      , frClickCount = 0
+      , debuggerVisible = False
+      , debuggerPosition = { x = 20, y = 20 }
+      , isDraggingDebugger = False
+      , dragOffset = { x = 0, y = 0 }
+      , debuggerSize = { width = 400, height = 300 }
+      , isResizingDebugger = False
+      , localStorageValues = Dict.empty
+      , selectedDifficulty = Nothing
       }
-    , Cmd.none
+    , Cmd.batch
+        [ getLocalStorageValue_ "language"
+        , getLocalStorageValue_ "darkMode"
+        ]
     )
 
 
@@ -115,12 +138,15 @@ update msg model =
                             ( newModel, cmd ) =
                                 case botMove of
                                     Just ( boardIdx, cellIdx ) ->
-                                        handlePlayerMove model boardIdx cellIdx
+                                        let
+                                            (modelAfterMove, moveCmd) = handlePlayerMove model boardIdx cellIdx
+                                        in
+                                        ( { modelAfterMove | botThinking = False }, moveCmd )
 
                                     Nothing ->
-                                        ( model, Cmd.none )
+                                        ( { model | botThinking = False }, Cmd.none )
                         in
-                        ( { newModel | botThinking = False }, cmd )
+                        ( newModel, cmd )
                     else
                         ( model, Cmd.none )
 
@@ -131,7 +157,13 @@ update msg model =
                     ( model, Cmd.none )
 
         RestartGame ->
-            ( { model | board = initialBoard }, Cmd.none )
+            ( { model 
+              | board = initialBoard
+              , moveHistory = []
+              , currentMoveIndex = -1
+              }
+            , Cmd.none
+            )
 
         StartGameWithFriend ->
             ( { model | route = Game WithFriend }, Cmd.none )
@@ -141,11 +173,53 @@ update msg model =
 
         SelectBotDifficulty difficulty ->
             ( { model 
-              | route = Game (WithBot difficulty)
-              , botDifficultyMenuOpen = False
+              | selectedDifficulty = Just difficulty
               }
             , Cmd.none
             )
+
+        StartWithPlayer humanStarts ->
+            let
+                newBoard =
+                    { initialBoard | currentPlayer = if humanStarts then X else O }
+
+                cmd =
+                    if not humanStarts then
+                        Task.perform (always BotMove) (Process.sleep 500)
+                    else
+                        Cmd.none
+            in
+            case model.route of
+                Game (WithBot _) ->
+                    -- If we're already in a game, restart with new starting player
+                    ( { model 
+                      | board = newBoard
+                      , moveHistory = []
+                      , currentMoveIndex = -1
+                      , humanPlaysFirst = humanStarts
+                      , botThinking = not humanStarts
+                      }
+                    , cmd
+                    )
+                
+                _ ->
+                    -- If we're selecting difficulty, start the game
+                    case model.selectedDifficulty of
+                        Just difficulty ->
+                            ( { model 
+                              | route = Game (WithBot difficulty)
+                              , botDifficultyMenuOpen = False
+                              , board = newBoard
+                              , moveHistory = []
+                              , currentMoveIndex = -1
+                              , selectedDifficulty = Nothing
+                              , humanPlaysFirst = humanStarts
+                              , botThinking = not humanStarts
+                              }
+                            , cmd
+                            )
+                        Nothing ->
+                            ( model, Cmd.none )
 
         ReturnToMenu ->
             ( { model | route = Home }, Cmd.none )
@@ -154,7 +228,140 @@ update msg model =
             ( { model | botDifficultyMenuOpen = False }, Cmd.none )
 
         ChangeLanguage lang ->
-            ( { model | language = lang }, Cmd.none )
+            let
+                newModel =
+                    { model 
+                    | language = lang
+                    , frClickCount = 
+                        if lang == FR then
+                            model.frClickCount + 1
+                        else
+                            model.frClickCount
+                    }
+            in
+            ( newModel
+            , storeLocalStorage { key = "language", value = languageToString lang }
+            )
+
+        CloseDebugger ->
+            ( { model | debuggerVisible = False, frClickCount = 0 }, Cmd.none )
+
+        UndoMove ->
+            if model.currentMoveIndex >= 0 then
+                let
+                    newIndex =
+                        model.currentMoveIndex - 1
+                    
+                    newBoard =
+                        reconstructBoardFromMoves model.moveHistory newIndex
+                in
+                ( { model
+                    | currentMoveIndex = newIndex
+                    , board = newBoard
+                  }
+                , Cmd.none
+                )
+            else
+                ( model, Cmd.none )
+
+        RedoMove ->
+            if model.currentMoveIndex < List.length model.moveHistory - 1 then
+                let
+                    newIndex =
+                        model.currentMoveIndex + 1
+                    
+                    newBoard =
+                        reconstructBoardFromMoves model.moveHistory newIndex
+                in
+                ( { model
+                    | currentMoveIndex = newIndex
+                    , board = newBoard
+                  }
+                , Cmd.none
+                )
+            else
+                ( model, Cmd.none )
+
+        ToggleDarkMode ->
+            ( { model | darkMode = not model.darkMode }
+            , storeLocalStorage { key = "darkMode", value = boolToString (not model.darkMode) }
+            )
+
+        ToggleDebugMode ->
+            ( model, Cmd.none )
+
+        ReceivedLocalStorage { language, darkMode } ->
+            ( { model | language = stringToLanguage language, darkMode = darkMode }
+            , Cmd.none
+            )
+
+        StartDraggingDebugger mouseX mouseY ->
+            ( { model 
+              | isDraggingDebugger = True
+              , dragOffset = 
+                    { x = mouseX - model.debuggerPosition.x
+                    , y = mouseY - model.debuggerPosition.y
+                    }
+              }
+            , Cmd.none
+            )
+
+        StopDraggingDebugger ->
+            ( { model | isDraggingDebugger = False }, Cmd.none )
+
+        DragDebugger mouseX mouseY ->
+            if model.isDraggingDebugger then
+                ( { model 
+                  | debuggerPosition = 
+                        { x = mouseX - model.dragOffset.x
+                        , y = mouseY - model.dragOffset.y
+                        }
+                  }
+                , Cmd.none
+                )
+            else
+                ( model, Cmd.none )
+
+        StartResizingDebugger ->
+            ( { model | isResizingDebugger = True }, Cmd.none )
+
+        StopResizingDebugger ->
+            ( { model | isResizingDebugger = False }, Cmd.none )
+
+        ResizeDebugger mouseX mouseY ->
+            if model.isResizingDebugger then
+                let
+                    newWidth =
+                        mouseX - model.debuggerPosition.x
+                    
+                    newHeight =
+                        mouseY - model.debuggerPosition.y
+                    
+                    -- Minimum size constraints
+                    constrainedWidth =
+                        Basics.max 200 newWidth
+                    
+                    constrainedHeight =
+                        Basics.max 150 newHeight
+                in
+                ( { model 
+                  | debuggerSize = 
+                        { width = constrainedWidth
+                        , height = constrainedHeight 
+                        }
+                  }
+                , Cmd.none
+                )
+            else
+                ( model, Cmd.none )
+
+        NoOp ->
+            ( model, Cmd.none )
+
+        ReceivedLocalStorageValue key value ->
+            ( { model | localStorageValues = Dict.insert key value model.localStorageValues }
+            , Cmd.none
+            )
 
 
 handlePlayerMove : Model -> Int -> Int -> ( Model, Cmd FrontendMsg )
@@ -170,7 +377,29 @@ handlePlayerMove model boardIndex cellIndex =
 
         updatedModel =
             if canPlayInBoard && isValidMove model.board boardIndex cellIndex then
-                { model | board = makeMove model.board boardIndex cellIndex }
+                let
+                    newBoard =
+                        makeMove model.board boardIndex cellIndex
+                        
+                    -- Create new move record
+                    newMove =
+                        { boardIndex = boardIndex
+                        , cellIndex = cellIndex
+                        , player = model.board.currentPlayer
+                        }
+                        
+                    -- Truncate future history if we're not at the end
+                    newHistory =
+                        List.take (model.currentMoveIndex + 1) model.moveHistory ++ [ newMove ]
+                        
+                    newIndex =
+                        model.currentMoveIndex + 1
+                in
+                { model 
+                | board = newBoard
+                , moveHistory = newHistory
+                , currentMoveIndex = newIndex
+                }
             else
                 model
     in
@@ -214,7 +443,7 @@ findBestMove board difficulty =
                                 Hard ->
                                     modBy 50 (boardIdx * 7 + cellIdx * 5)
                                 Elite ->
-                                    modBy 10 (boardIdx * 3 + cellIdx * 2)  -- Petit facteur aléatoire pour Elite
+                                    modBy 10 (boardIdx * 3 + cellIdx * 2)  -- Petit facteur alatoire pour Elite
                     in
                     ( ( boardIdx, cellIdx ), baseScore + randomFactor )
                 )
@@ -644,6 +873,16 @@ view model =
     let
         t =
             translations model.language
+
+        darkModeStyles =
+            if model.darkMode then
+                [ style "background-color" Color.darkBackground
+                , style "color" Color.darkText
+                ]
+            else
+                [ style "background-color" Color.lightBackground
+                , style "color" Color.lightText
+                ]
     in
     { title = t.welcome
     , body =
@@ -659,40 +898,45 @@ view model =
             , style "box-sizing" "border-box"
             , style "position" "relative"
             ]
-            [ Html.node "style" 
+            ([ Html.node "style" 
                 [] 
                 [ text """
                     @keyframes thinking {
                         0%, 100% { opacity: 0.3; transform: scale(0.8); }
                         50% { opacity: 1; transform: scale(1.2); }
                     }
+                    @keyframes blink {
+                        0% { opacity: 0.5; }
+                        50% { opacity: 1; }
+                        100% { opacity: 0.5; }
+                    }
                 """
                 ]
-            , viewLanguageSelector model.language
+            , viewLanguageSelector model
             , case model.route of
                 Home ->
                     viewHome model
                 
                 Game mode ->
                     viewGame model mode
-            ]
+            ] ++ Debugger.view model)
         ]
     }
 
 
-viewGameButton : String -> FrontendMsg -> Html FrontendMsg
-viewGameButton label msg =
+viewGameButton : Model -> String -> FrontendMsg -> Html FrontendMsg
+viewGameButton model label msg =
     button
         [ style "padding" "15px 40px"
         , style "font-size" "1.2em"
         , style "font-weight" "600"
-        , style "background-color" "#3498db"
+        , style "background-color" (if model.darkMode then Color.darkSecondaryBackground else Color.primary)
         , style "color" "white"
         , style "border" "none"
         , style "border-radius" "10px"
         , style "cursor" "pointer"
         , style "transition" "all 0.2s ease"
-        , style "box-shadow" "0 4px 6px rgba(52, 152, 219, 0.2)"
+        , style "box-shadow" "0 4px 6px rgba(0, 0, 0, 0.2)"
         , style "margin" "10px"
         , style "width" "100%"
         , style "max-width" "300px"
@@ -708,7 +952,7 @@ viewHome model =
             translations model.language
     in
     div
-        [ style "background-color" "white"
+        [ style "background-color" (Color.getBackground model.darkMode)
         , style "border-radius" "20px"
         , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
         , style "padding" "40px"
@@ -718,12 +962,12 @@ viewHome model =
         ]
         [ h1 
             [ style "margin" "0 0 20px 0"
-            , style "color" "#2c3e50"
+            , style "color" (Color.getText model.darkMode)
             , style "font-size" "2.5em"
             ] 
             [ text t.welcome ]
         , p 
-            [ style "color" "#34495e"
+            [ style "color" (Color.getText model.darkMode)
             , style "margin-bottom" "30px"
             , style "line-height" "1.6"
             ]
@@ -734,71 +978,13 @@ viewHome model =
             , style "align-items" "center"
             , style "gap" "15px"
             ]
-            [ viewGameButton t.playWithFriend StartGameWithFriend
+            [ viewGameButton model t.playWithFriend StartGameWithFriend
             , if model.botDifficultyMenuOpen then
                 viewBotDifficultyMenu model
               else
-                viewGameButton t.playWithBot StartGameWithBot
+                viewGameButton model t.playWithBot StartGameWithBot
             ]
         ]
-
-
-viewBotDifficultyMenu : Model -> Html FrontendMsg
-viewBotDifficultyMenu model =
-    let
-        t =
-            translations model.language
-    in
-    div
-        [ style "display" "flex"
-        , style "flex-direction" "column"
-        , style "gap" "10px"
-        , style "width" "100%"
-        ]
-        [ h2 
-            [ style "margin" "0 0 15px 0"
-            , style "color" "#2c3e50"
-            , style "font-size" "1.5em"
-            ] 
-            [ text t.chooseDifficulty ]
-        , viewDifficultyButton t.easy Easy
-        , viewDifficultyButton t.medium Medium
-        , viewDifficultyButton t.hard Hard
-        , viewDifficultyButton t.elite Elite
-        , button
-            [ style "padding" "12px"
-            , style "font-size" "1.1em"
-            , style "font-weight" "600"
-            , style "background-color" "#e74c3c"
-            , style "color" "white"
-            , style "border" "none"
-            , style "border-radius" "8px"
-            , style "cursor" "pointer"
-            , style "transition" "all 0.2s ease"
-            , style "width" "100%"
-            , style "margin-top" "10px"
-            , onClick CancelBotDifficulty
-            ]
-            [ text t.back ]
-        ]
-
-
-viewDifficultyButton : String -> BotDifficulty -> Html FrontendMsg
-viewDifficultyButton label difficulty =
-    button
-        [ style "padding" "12px"
-        , style "font-size" "1.1em"
-        , style "font-weight" "600"
-        , style "background-color" "#3498db"
-        , style "color" "white"
-        , style "border" "none"
-        , style "border-radius" "8px"
-        , style "cursor" "pointer"
-        , style "transition" "all 0.2s ease"
-        , style "width" "100%"
-        , onClick (SelectBotDifficulty difficulty)
-        ]
-        [ text label ]
 
 
 viewGame : Model -> GameMode -> Html FrontendMsg
@@ -806,10 +992,39 @@ viewGame model mode =
     let
         t =
             translations model.language
+
+        darkModeStyles =
+            if model.darkMode then
+                [ style "background-color" Color.darkBackground
+                , style "color" Color.darkText
+                ]
+            else
+                [ style "background-color" Color.lightBackground
+                , style "color" Color.lightText
+                ]
+
+        isGameStarted =
+            not (List.isEmpty model.moveHistory)
+
+        shouldShowStartingPlayer =
+            case mode of
+                WithBot _ ->
+                    True
+                _ ->
+                    False
+
+        activeBoardStyle =
+            case model.board.activeBoard of
+                Just activeBoardIndex ->
+                    if model.board.currentPlayer == O && model.botThinking then
+                        [ style "animation" "thinking 1s infinite" ]
+                    else
+                        []
+                Nothing ->
+                    []
     in
     div 
-        [ style "background-color" "white"
-        , style "border-radius" "20px"
+        ([ style "border-radius" "20px"
         , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
         , style "width" "min(95vw, 90vh)"
         , style "display" "flex"
@@ -817,14 +1032,13 @@ viewGame model mode =
         , style "box-sizing" "border-box"
         , style "overflow" "hidden"
         , style "padding" "20px"
-        ]
+        ] ++ darkModeStyles)
         [ div 
             [ style "text-align" "center"
             , style "margin-bottom" "15px"
             ]
             [ h1 
                 [ style "margin" "0"
-                , style "color" "#2c3e50"
                 , style "font-size" "clamp(1.2em, 3vmin, 2em)"
                 , style "font-weight" "700"
                 ] 
@@ -835,7 +1049,6 @@ viewGame model mode =
                 , style "align-items" "center"
                 , style "gap" "10px"
                 , style "margin-top" "10px"
-                , style "color" "#34495e"
                 , style "font-size" "0.9em"
                 ]
                 [ text <| 
@@ -864,31 +1077,18 @@ viewGame model mode =
             , style "min-height" "0"
             , style "margin-bottom" "15px"
             ]
-            [ viewBigBoard model.board ]
+            [ viewBigBoard model ]
         , div
             [ style "display" "flex"
             , style "gap" "10px"
+            , style "flex-wrap" "wrap"
             ]
             [ button
-                [ style "width" "100%"
+                [ style "flex" "1"
                 , style "padding" "12px"
                 , style "font-size" "clamp(12px, 2vmin, 16px)"
                 , style "font-weight" "600"
-                , style "background-color" "#3498db"
-                , style "color" "white"
-                , style "border" "none"
-                , style "border-radius" "10px"
-                , style "cursor" "pointer"
-                , style "transition" "all 0.2s ease"
-                , onClick RestartGame
-                ]
-                [ text t.restart ]
-            , button
-                [ style "width" "100%"
-                , style "padding" "12px"
-                , style "font-size" "clamp(12px, 2vmin, 16px)"
-                , style "font-weight" "600"
-                , style "background-color" "#e74c3c"
+                , style "background-color" Color.danger
                 , style "color" "white"
                 , style "border" "none"
                 , style "border-radius" "10px"
@@ -898,7 +1098,142 @@ viewGame model mode =
                 ]
                 [ text t.backToMenu ]
             ]
+        , div
+            [ style "display" "flex"
+            , style "gap" "10px"
+            , style "margin-top" "10px"
+            ]
+            [ button
+                [ style "flex" "1"
+                , style "padding" "8px"
+                , style "font-size" "1.2em"
+                , style "background-color" (if model.currentMoveIndex > 0 then Color.primary else Color.disabled)
+                , style "color" "white"
+                , style "border" "none"
+                , style "border-radius" "6px"
+                , style "cursor" (if model.currentMoveIndex > 0 then "pointer" else "not-allowed")
+                , style "display" "flex"
+                , style "align-items" "center"
+                , style "justify-content" "center"
+                , onClick UndoMove
+                ]
+                [ text "↩" ]
+            , button
+                [ style "flex" "1"
+                , style "padding" "8px"
+                , style "font-size" "1.2em"
+                , style "background-color" (if model.currentMoveIndex < List.length model.moveHistory - 1 then Color.primary else Color.disabled)
+                , style "color" "white"
+                , style "border" "none"
+                , style "border-radius" "6px"
+                , style "cursor" (if model.currentMoveIndex < List.length model.moveHistory - 1 then "pointer" else "not-allowed")
+                , style "display" "flex"
+                , style "align-items" "center"
+                , style "justify-content" "center"
+                , onClick RedoMove
+                ]
+                [ text "↪" ]
+            ]
         ]
+
+
+viewBotDifficultyMenu : Model -> Html FrontendMsg
+viewBotDifficultyMenu model =
+    let
+        t =
+            translations model.language
+    in
+    div
+        [ style "display" "flex"
+        , style "flex-direction" "column"
+        , style "gap" "10px"
+        , style "width" "100%"
+        ]
+        [ h2 
+            [ style "margin" "0 0 15px 0"
+            , style "color" (Color.getText model.darkMode)
+            , style "font-size" "1.5em"
+            ] 
+            [ text t.chooseDifficulty ]
+        , viewDifficultyButton model t.easy Easy
+        , viewDifficultyButton model t.medium Medium
+        , viewDifficultyButton model t.hard Hard
+        , viewDifficultyButton model t.elite Elite
+        , case model.selectedDifficulty of
+            Just difficulty ->
+                div
+                    [ style "display" "flex"
+                    , style "gap" "10px"
+                    , style "margin-top" "10px"
+                    ]
+                    [ button
+                        [ style "flex" "1"
+                        , style "padding" "8px"
+                        , style "font-size" "0.9em"
+                        , style "background-color" Color.primary
+                        , style "color" "white"
+                        , style "border" "none"
+                        , style "border-radius" "6px"
+                        , style "cursor" "pointer"
+                        , onClick (StartWithPlayer True)
+                        ]
+                        [ text t.humanStarts ]
+                    , button
+                        [ style "flex" "1"
+                        , style "padding" "8px"
+                        , style "font-size" "0.9em"
+                        , style "background-color" Color.primary
+                        , style "color" "white"
+                        , style "border" "none"
+                        , style "border-radius" "6px"
+                        , style "cursor" "pointer"
+                        , onClick (StartWithPlayer False)
+                        ]
+                        [ text t.botStarts ]
+                    ]
+            Nothing ->
+                text ""
+        , button
+            [ style "padding" "12px"
+            , style "font-size" "1.1em"
+            , style "font-weight" "600"
+            , style "background-color" Color.danger
+            , style "color" "white"
+            , style "border" "none"
+            , style "border-radius" "8px"
+            , style "cursor" "pointer"
+            , style "transition" "all 0.2s ease"
+            , style "width" "100%"
+            , style "margin-top" "10px"
+            , onClick CancelBotDifficulty
+            ]
+            [ text t.back ]
+        ]
+
+
+viewDifficultyButton : Model -> String -> BotDifficulty -> Html FrontendMsg
+viewDifficultyButton model label difficulty =
+    button
+        [ style "padding" "12px"
+        , style "font-size" "1.1em"
+        , style "font-weight" "600"
+        , style "background-color" (
+            if model.selectedDifficulty == Just difficulty then
+                Color.success
+            else if model.darkMode then 
+                Color.darkSecondaryBackground 
+            else 
+                Color.primary
+          )
+        , style "color" "white"
+        , style "border" "none"
+        , style "border-radius" "8px"
+        , style "cursor" "pointer"
+        , style "transition" "all 0.2s ease"
+        , style "width" "100%"
+        , onClick (SelectBotDifficulty difficulty)
+        ]
+        [ text label ]
 
 
 viewStatus : Model -> Html msg
@@ -909,7 +1244,7 @@ viewStatus model =
     in
     div 
         [ style "margin" "10px 0"
-        , style "color" "#34495e"
+        , style "color" (Color.getText model.darkMode)
         , style "font-size" "clamp(0.9em, 2.5vmin, 1.2em)"
         , style "font-weight" "600"
         ]
@@ -950,28 +1285,54 @@ viewThinkingIndicator =
         ]
 
 
-viewLanguageSelector : Language -> Html FrontendMsg
-viewLanguageSelector currentLang =
+viewLanguageSelector : Model -> Html FrontendMsg
+viewLanguageSelector model =
     div
         [ style "position" "absolute"
         , style "top" "20px"
         , style "right" "20px"
         , style "display" "flex"
         , style "gap" "10px"
+        , style "align-items" "center"
+        , style "background-color" (Color.withAlpha (if model.darkMode then Color.darkBackground else Color.lightBackground) 0.8)
+        , style "padding" "6px"
+        , style "border-radius" "10px"
+        , style "backdrop-filter" "blur(10px)"
+        , style "box-shadow" "0 2px 10px rgba(0, 0, 0, 0.1)"
         ]
-        [ viewLanguageButton "FR" FR (currentLang == FR)
-        , viewLanguageButton "EN" EN (currentLang == EN)
+        [ viewDarkModeButton model.darkMode
+        , div [ style "width" "1px", style "height" "20px", style "background-color" (Color.getBorder model.darkMode) ] []
+        , viewLanguageButton "FR" FR (model.language == FR) model.darkMode
+        , viewLanguageButton "EN" EN (model.language == EN) model.darkMode
         ]
 
 
-viewLanguageButton : String -> Language -> Bool -> Html FrontendMsg
-viewLanguageButton label lang isActive =
+viewDarkModeButton : Bool -> Html FrontendMsg
+viewDarkModeButton isDark =
+    button
+        [ style "padding" "8px"
+        , style "font-size" "1.1em"
+        , style "background" "none"
+        , style "border" "none"
+        , style "cursor" "pointer"
+        , style "display" "flex"
+        , style "align-items" "center"
+        , style "justify-content" "center"
+        , style "color" (if isDark then Color.darkTextHover else Color.lightText)
+        , style "transition" "all 0.2s ease"
+        , onClick ToggleDarkMode
+        ]
+        [ text (if isDark then "🌙" else "☀️") ]
+
+
+viewLanguageButton : String -> Language -> Bool -> Bool -> Html FrontendMsg
+viewLanguageButton label lang isActive isDark =
     button
         [ style "padding" "8px 12px"
         , style "font-size" "0.9em"
         , style "font-weight" "600"
-        , style "background-color" (if isActive then "#3498db" else "#e2e8f0")
-        , style "color" (if isActive then "white" else "#2c3e50")
+        , style "background-color" (if isActive then Color.primary else (if isDark then Color.darkSecondaryBackground else Color.lightBorder))
+        , style "color" (if isActive then "white" else (if isDark then Color.darkText else Color.lightText))
         , style "border" "none"
         , style "border-radius" "6px"
         , style "cursor" "pointer"
@@ -981,50 +1342,82 @@ viewLanguageButton label lang isActive =
         [ text label ]
 
 
-viewBigBoard : BigBoard -> Html FrontendMsg
-viewBigBoard board =
+viewBigBoard : Model -> Html FrontendMsg
+viewBigBoard model =
+    let
+        isBotTurn =
+            case model.route of
+                Game (WithBot _) ->
+                    model.board.currentPlayer == O && model.botThinking
+                _ ->
+                    False
+
+        shouldBlink =
+            isBotTurn && model.board.activeBoard == Nothing
+    in
     div 
-        [ style "display" "grid"
+        ([ style "display" "grid"
         , style "grid-template-columns" "repeat(3, 1fr)"
         , style "gap" "10px"
         , style "width" "min(70vh, 100%)"
         , style "aspect-ratio" "1/1"
         , style "margin" "0 auto"
         , style "padding" "2px"
-        ]
-        (List.indexedMap (viewSmallBoard board) board.boards)
+        ] ++
+        (if shouldBlink then
+            [ style "animation" "blink 1s ease-in-out infinite" ]
+         else
+            []
+        ))
+        (List.indexedMap (viewSmallBoard model) model.board.boards)
 
 
-viewSmallBoard : BigBoard -> Int -> SmallBoard -> Html FrontendMsg
-viewSmallBoard bigBoard boardIndex smallBoard =
+viewSmallBoard : Model -> Int -> SmallBoard -> Html FrontendMsg
+viewSmallBoard model boardIndex smallBoard =
     let
         isActive =
-            case bigBoard.activeBoard of
+            case model.board.activeBoard of
                 Nothing ->
                     True
 
                 Just activeBoardIndex ->
                     activeBoardIndex == boardIndex
 
+        isBotTurn =
+            case model.route of
+                Game (WithBot _) ->
+                    model.board.currentPlayer == O && model.botThinking
+                _ ->
+                    False
+
+        isClickable =
+            isActive && not (isBotTurn)
+
         borderColor =
             if isActive then
-                "#4CAF50"
+                Color.success
             else
-                "#e2e8f0"
+                Color.getBorder model.darkMode
 
         backgroundColor =
             case smallBoard.winner of
                 Just X ->
-                    "#ff8a65"
+                    Color.playerX
 
                 Just O ->
-                    "#64b5f6"
+                    Color.playerO
 
                 Nothing ->
-                    "#ffffff"
+                    Color.getBackground model.darkMode
+
+        cellStyle =
+            [ style "box-shadow" ("inset 0 0 0 1px " ++ Color.getBorder model.darkMode) ]
+
+        shouldBlink =
+            isActive && isBotTurn && model.board.activeBoard /= Nothing
     in
     div
-        [ style "background-color" backgroundColor
+        ([ style "background-color" backgroundColor
         , style "border-radius" "8px"
         , style "display" "grid"
         , style "grid-template-columns" "repeat(3, 1fr)"
@@ -1032,12 +1425,17 @@ viewSmallBoard bigBoard boardIndex smallBoard =
         , style "padding" "4px"
         , style "aspect-ratio" "1/1"
         , style "box-shadow" ("0 0 0 2px " ++ borderColor)
-        ]
-        (List.indexedMap (viewCell bigBoard boardIndex) smallBoard.cells)
+        ] ++
+        (if shouldBlink then
+            [ style "animation" "blink 1s ease-in-out infinite" ]
+         else
+            []
+        ))
+        (List.indexedMap (viewCell model boardIndex isClickable cellStyle) smallBoard.cells)
 
 
-viewCell : BigBoard -> Int -> Int -> CellState -> Html FrontendMsg
-viewCell board boardIndex cellIndex cellState =
+viewCell : Model -> Int -> Bool -> List (Html.Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
+viewCell model boardIndex isClickable cellStyles cellIndex cellState =
     let
         symbol =
             case cellState of
@@ -1050,33 +1448,49 @@ viewCell board boardIndex cellIndex cellState =
                 Filled O ->
                     "○"
 
-        (textColor, hoverBg) =
+        (textColor, bgColor) =
             case cellState of
                 Empty ->
-                    ("#000000", "#f1f5f9")
+                    if model.darkMode then
+                        (Color.darkText, Color.darkBackground)
+                    else
+                        (Color.lightText, Color.lightBackground)
 
                 Filled X ->
-                    ("#e74c3c", "")
+                    (Color.danger, if model.darkMode then Color.darkBackground else Color.lightBackground)
 
                 Filled O ->
-                    ("#3498db", "")
+                    (Color.primary, if model.darkMode then Color.darkBackground else Color.lightBackground)
+
+        isCellClickable =
+            isClickable && cellState == Empty
+
+        cursor =
+            if isCellClickable then
+                "pointer"
+            else
+                "default"
     in
     div
-        [ style "width" "100%"
+        ([ style "width" "100%"
         , style "aspect-ratio" "1/1"
-        , style "box-shadow" "0 0 0 1px #e2e8f0"
-        , style "background-color" "#ffffff"
+        , style "background-color" bgColor
         , style "display" "flex"
         , style "align-items" "center"
         , style "justify-content" "center"
         , style "font-size" "clamp(2em, 8vmin, 4em)"
         , style "font-weight" "bold"
-        , style "cursor" (if cellState == Empty then "pointer" else "default")
+        , style "cursor" cursor
         , style "color" textColor
         , style "user-select" "none"
         , style "border-radius" "4px"
-        , onClick (CellClicked boardIndex cellIndex)
-        ]
+        ] ++ 
+        cellStyles ++
+        (if isCellClickable then
+            [ onClick (CellClicked boardIndex cellIndex) ]
+        else
+            [ style "pointer-events" "none" ]
+        ))
         [ div 
             [ style "width" "100%"
             , style "height" "100%"
@@ -1087,3 +1501,101 @@ viewCell board boardIndex cellIndex cellState =
             ] 
             [ text symbol ]
         ]
+
+
+subscriptions : Model -> Sub FrontendMsg
+subscriptions model =
+    Sub.batch
+        [ receiveLocalStorage ReceivedLocalStorage
+        , receiveLocalStorageValue_ (\jsonStr ->
+            case D.decodeString localStorageValueDecoder jsonStr of
+                Ok { key, value } ->
+                    ReceivedLocalStorageValue key value
+                
+                Err _ ->
+                    NoOp
+          )
+        , if model.isDraggingDebugger then
+            Sub.batch
+                [ Browser.Events.onMouseMove
+                    (D.map2 DragDebugger
+                        (D.field "clientX" D.float)
+                        (D.field "clientY" D.float)
+                    )
+                , Browser.Events.onMouseUp
+                    (D.succeed StopDraggingDebugger)
+                ]
+          else if model.isResizingDebugger then
+            Sub.batch
+                [ Browser.Events.onMouseMove
+                    (D.map2 ResizeDebugger
+                        (D.field "clientX" D.float)
+                        (D.field "clientY" D.float)
+                    )
+                , Browser.Events.onMouseUp
+                    (D.succeed StopResizingDebugger)
+                ]
+          else
+            Sub.none
+        ]
+
+
+storeLocalStorage : { key : String, value : String } -> Cmd msg
+storeLocalStorage { key, value } =
+    let
+        json =
+            E.object
+                [ ( "key", E.string key )
+                , ( "value", E.string value )
+                ]
+    in
+    storeLocalStorage_ (E.encode 0 json)
+
+
+receiveLocalStorage : ({ language : String, darkMode : Bool } -> msg) -> Sub msg
+receiveLocalStorage toMsg =
+    receiveLocalStorage_ 
+        (\jsonStr ->
+            case D.decodeString storageDecoder jsonStr of
+                Ok data ->
+                    toMsg data
+                
+                Err _ ->
+                    toMsg { language = "FR", darkMode = False }
+        )
+
+
+storageDecoder : D.Decoder { language : String, darkMode : Bool }
+storageDecoder =
+    D.map2 (\lang dark -> { language = lang, darkMode = dark })
+        (D.field "language" D.string)
+        (D.field "darkMode" D.bool)
+
+
+boolToString : Bool -> String
+boolToString bool =
+    if bool then
+        "true"
+    else
+        "false"
+
+
+localStorageValueDecoder : D.Decoder { key : String, value : String }
+localStorageValueDecoder =
+    D.map2 (\k v -> { key = k, value = v })
+        (D.field "key" D.string)
+        (D.field "value" D.string)
+
+
+reconstructBoardFromMoves : List Move -> Int -> BigBoard
+reconstructBoardFromMoves moves upToIndex =
+    let
+        movesToApply =
+            List.take (upToIndex + 1) moves
+    in
+    List.foldl
+        (\move board ->
+            makeMove board move.boardIndex move.cellIndex
+        )
+        initialBoard
+        movesToApply

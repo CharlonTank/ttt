@@ -18,9 +18,12 @@ type alias Translation =
     , playerOTurn : String
     , playerWins : String -> String
     , restart : String
+    , start : String
     , backToMenu : String
     , playingWithFriend : String
     , playingWithBot : String -> String
+    , humanStarts : String
+    , botStarts : String
     }
 
 
@@ -28,11 +31,11 @@ translations : Language -> Translation
 translations lang =
     case lang of
         FR ->
-            { welcome = "Ultimate Morpion"
-            , description = "Bienvenue dans Ultimate Morpion ! Défiez votre réflexion stratégique dans cette version avancée du Morpion."
-            , playWithFriend = "Jouer hors ligne avec un ami"
-            , playWithBot = "Jouer avec un bot"
-            , chooseDifficulty = "Choisir la difficulté"
+            { welcome = "Ultimate Tic Tac Toe"
+            , description = "Bienvenue dans Ultimate Tic Tac Toe ! Défiez votre réflexion stratégique dans cette version avancée du jeu."
+            , playWithFriend = "Jouer avec un ami"
+            , playWithBot = "Jouer avec le bot"
+            , chooseDifficulty = "Choisissez la difficulté"
             , easy = "Facile"
             , medium = "Moyen"
             , hard = "Difficile"
@@ -42,9 +45,12 @@ translations lang =
             , playerOTurn = "Tour du joueur O"
             , playerWins = \player -> "🎉 " ++ player ++ " gagne ! 🎉"
             , restart = "Recommencer"
+            , start = "Commencer"
             , backToMenu = "Retour au menu"
-            , playingWithFriend = "Mode: Hors ligne avec un ami"
-            , playingWithBot = \difficulty -> "Mode: Contre le bot (" ++ difficulty ++ ")"
+            , playingWithFriend = "Mode : Jeu avec un ami"
+            , playingWithBot = \difficulty -> "Mode : Jeu contre le bot (" ++ difficulty ++ ")"
+            , humanStarts = "Vous commencez"
+            , botStarts = "Le bot commence"
             }
 
         EN ->
@@ -62,9 +68,12 @@ translations lang =
             , playerOTurn = "Player O's turn"
             , playerWins = \player -> "🎉 " ++ player ++ " wins! 🎉"
             , restart = "Restart"
+            , start = "Start"
             , backToMenu = "Back to menu"
             , playingWithFriend = "Mode: Playing with friend"
             , playingWithBot = \difficulty -> "Mode: Playing against bot (" ++ difficulty ++ ")"
+            , humanStarts = "You start"
+            , botStarts = "Bot starts"
             }
 
 
