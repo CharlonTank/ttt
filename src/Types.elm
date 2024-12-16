@@ -5,7 +5,10 @@ import Browser.Navigation exposing (Key)
 import Dict exposing (Dict)
 import Json.Decode as D
 import Json.Encode as E
+import Lamdera exposing (ClientId)
 import Url exposing (Url)
+import Random
+import Time
 
 
 
@@ -52,6 +55,7 @@ type alias BigBoard =
     , currentPlayer : Player
     , activeBoard : Maybe Int
     , winner : Maybe Player
+    , initialPlayer : Player
     }
 
 
@@ -65,6 +69,7 @@ type BotDifficulty
 type GameMode
     = WithFriend
     | WithBot BotDifficulty
+    | OnlineGame
 
 
 type Route
@@ -98,11 +103,18 @@ type alias FrontendModel =
     , localStorageValues : Dict String String
     , selectedDifficulty : Maybe BotDifficulty
     , rulesModalVisible : Bool
+    , inMatchmaking : Bool
+    , onlineOpponent : Maybe ClientId
+    , onlinePlayer : Maybe Player
+    , showAbandonConfirm : Bool
     }
 
 
 type alias BackendModel =
     { message : String
+    , matchmakingQueue : List ClientId
+    , activeGames : List ( ClientId, ClientId, BigBoard )
+    , seed : Random.Seed
     }
 
 
@@ -113,6 +125,7 @@ type FrontendMsg
     | RestartGame
     | StartGameWithFriend
     | StartGameWithBot
+    | StartOnlineGame
     | SelectBotDifficulty BotDifficulty
     | CancelBotDifficulty
     | ReturnToMenu
@@ -133,20 +146,36 @@ type FrontendMsg
     | NoOp
     | ReceivedLocalStorageValue String String
     | StartWithPlayer Bool
+    | StartWithRandomPlayer
     | PlayForMe
     | ToggleRulesModal
+    | ReceivedGameFound { opponentId : ClientId, playerRole : Player }
+    | ReceivedOpponentMove Move
+    | ReceivedOpponentLeft
+    | GotTime Time.Posix
+    | Tick Time.Posix
+    | ShowAbandonConfirm
+    | HideAbandonConfirm
+    | ConfirmAbandon
 
 
 type ToBackend
     = NoOpToBackend
+    | JoinMatchmaking
+    | LeaveMatchmaking
+    | MakeMove Int Int Player
 
 
 type BackendMsg
     = NoOpBackendMsg
+    | GotInitialTime Time.Posix
 
 
 type ToFrontend
     = NoOpToFrontend
+    | GameFound { opponentId : ClientId, playerRole : Player }
+    | OpponentMove Move
+    | OpponentLeft
 
 
 

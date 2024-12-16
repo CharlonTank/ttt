@@ -23,6 +23,7 @@ import Svg.Attributes
 import Task
 import Types exposing (..)
 import Url
+import Time
 
 
 type alias Model =
@@ -44,7 +45,7 @@ app =
 init : Url.Url -> Nav.Key -> ( Model, Cmd FrontendMsg )
 init url key =
     ( { key = key
-      , board = initialBoard
+      , board = initialBoard X
       , route = Home
       , botDifficultyMenuOpen = False
       , language = FR
@@ -63,6 +64,10 @@ init url key =
       , localStorageValues = Dict.empty
       , selectedDifficulty = Nothing
       , rulesModalVisible = False
+      , inMatchmaking = False
+      , onlineOpponent = Nothing
+      , onlinePlayer = Nothing
+      , showAbandonConfirm = False
       }
     , Cmd.batch
         [ getLocalStorageValue_ "language"
@@ -71,12 +76,13 @@ init url key =
     )
 
 
-initialBoard : BigBoard
-initialBoard =
+initialBoard : Player -> BigBoard
+initialBoard startingPlayer =
     { boards = List.repeat 9 emptySmallBoard
-    , currentPlayer = X
+    , currentPlayer = startingPlayer
     , activeBoard = Nothing
     , winner = Nothing
+    , initialPlayer = startingPlayer
     }
 
 
@@ -106,31 +112,59 @@ update msg model =
             ( model, Cmd.none )
 
         CellClicked boardIndex cellIndex ->
-            case model.route of
-                Game (WithBot difficulty) ->
-                    if model.board.currentPlayer == O then
-                        -- It's bot's turn, don't allow player to move
-                        ( model, Cmd.none )
-
-                    else
-                        let
-                            ( updatedModel, cmd ) =
-                                handlePlayerMove model boardIndex cellIndex
-                        in
-                        if updatedModel.board.winner == Nothing then
-                            -- Schedule bot's move and show thinking state
-                            ( { updatedModel | botThinking = True }
-                            , Cmd.batch [ cmd, Task.perform (always BotMove) (Process.sleep 500) ]
-                            )
+            if model.currentMoveIndex < List.length model.moveHistory - 1 then
+                -- We're viewing history, don't allow moves
+                ( model, Cmd.none )
+            else
+                case model.route of
+                    Game (WithBot difficulty) ->
+                        if model.board.currentPlayer == O then
+                            -- It's bot's turn, don't allow player to move
+                            ( model, Cmd.none )
 
                         else
-                            ( updatedModel, cmd )
+                            let
+                                ( updatedModel, cmd ) =
+                                    handlePlayerMove model boardIndex cellIndex
+                            in
+                            if updatedModel.board.winner == Nothing then
+                                -- Schedule bot's move and show thinking state
+                                ( { updatedModel | botThinking = True }
+                                , Cmd.batch [ cmd, Task.perform (always BotMove) (Process.sleep 500) ]
+                                )
 
-                Game WithFriend ->
-                    handlePlayerMove model boardIndex cellIndex
+                            else
+                                ( updatedModel, cmd )
 
-                Home ->
-                    ( model, Cmd.none )
+                    Game WithFriend ->
+                        handlePlayerMove model boardIndex cellIndex
+
+                    Game OnlineGame ->
+                        if model.onlineOpponent == Nothing then
+                            ( model, Cmd.none )
+                        else
+                            let
+                                isMyTurn = 
+                                    case model.onlinePlayer of
+                                        Just player -> player == model.board.currentPlayer
+                                        Nothing -> False
+                            in
+                            if not isMyTurn then
+                                ( model, Cmd.none )
+                            else
+                                let
+                                    ( updatedModel, cmd ) =
+                                        handlePlayerMove model boardIndex cellIndex
+                                in
+                                ( updatedModel
+                                , Cmd.batch
+                                    [ cmd
+                                    , Lamdera.sendToBackend (MakeMove boardIndex cellIndex model.board.currentPlayer)
+                                    ]
+                                )
+
+                    Home ->
+                        ( model, Cmd.none )
 
         BotMove ->
             case model.route of
@@ -160,12 +194,15 @@ update msg model =
                 Game WithFriend ->
                     ( model, Cmd.none )
 
+                Game OnlineGame ->
+                    ( model, Cmd.none )
+
                 Home ->
                     ( model, Cmd.none )
 
         RestartGame ->
             ( { model
-                | board = initialBoard
+                | board = initialBoard X
                 , moveHistory = []
                 , currentMoveIndex = -1
               }
@@ -187,15 +224,14 @@ update msg model =
 
         StartWithPlayer humanStarts ->
             let
-                newBoard =
-                    { initialBoard
-                        | currentPlayer =
-                            if humanStarts then
-                                X
+                startingPlayer =
+                    if humanStarts then
+                        X
+                    else
+                        O
 
-                            else
-                                O
-                    }
+                newBoard =
+                    initialBoard startingPlayer
 
                 cmd =
                     if not humanStarts then
@@ -305,7 +341,7 @@ update msg model =
                         model.currentMoveIndex - 1
 
                     newBoard =
-                        reconstructBoardFromMoves model.moveHistory newIndex
+                        reconstructBoardFromMoves model.moveHistory newIndex model.board
                 in
                 ( { model
                     | currentMoveIndex = newIndex
@@ -324,7 +360,7 @@ update msg model =
                         model.currentMoveIndex + 1
 
                     newBoard =
-                        reconstructBoardFromMoves model.moveHistory newIndex
+                        reconstructBoardFromMoves model.moveHistory newIndex model.board
                 in
                 ( { model
                     | currentMoveIndex = newIndex
@@ -421,6 +457,133 @@ update msg model =
 
         ToggleRulesModal ->
             ( { model | rulesModalVisible = not model.rulesModalVisible }, Cmd.none )
+
+        StartOnlineGame ->
+            ( { model | inMatchmaking = True }
+            , Lamdera.sendToBackend JoinMatchmaking
+            )
+
+        ReceivedGameFound data ->
+            ( { model 
+              | inMatchmaking = False
+              , onlineOpponent = Just data.opponentId
+              , route = Game OnlineGame
+              , board = initialBoard X
+              , onlinePlayer = Just data.playerRole
+              }
+            , Cmd.none
+            )
+
+        ReceivedOpponentMove move ->
+            let
+                newBoard =
+                    applyMove move model.board
+
+                -- Create new move record and update history
+                newHistory =
+                    List.take (model.currentMoveIndex + 1) model.moveHistory ++ [ move ]
+
+                newIndex =
+                    List.length newHistory - 1
+            in
+            ( { model 
+              | board = newBoard
+              , moveHistory = newHistory
+              , currentMoveIndex = newIndex
+              }
+            , Cmd.none
+            )
+
+        ReceivedOpponentLeft ->
+            ( { model 
+              | onlineOpponent = Nothing
+              , onlinePlayer = Nothing
+              , route = Home
+              }
+            , Cmd.none
+            )
+
+        StartWithRandomPlayer ->
+            ( model, Task.perform GotTime Time.now )
+            
+        GotTime time ->
+            let
+                randomValue = 
+                    modBy 2 (Time.posixToMillis time)
+                    
+                humanStarts = 
+                    randomValue == 0
+                    
+                startingPlayer =
+                    if humanStarts then
+                        X
+                    else
+                        O
+
+                newBoard =
+                    initialBoard startingPlayer
+
+                cmd =
+                    if not humanStarts then
+                        Task.perform (always BotMove) (Process.sleep 500)
+
+                    else
+                        Cmd.none
+            in
+            case model.route of
+                Game (WithBot _) ->
+                    -- If we're already in a game, restart with new starting player
+                    ( { model
+                        | board = newBoard
+                        , moveHistory = []
+                        , currentMoveIndex = -1
+                        , humanPlaysFirst = humanStarts
+                        , botThinking = not humanStarts
+                      }
+                    , cmd
+                    )
+
+                _ ->
+                    -- If we're selecting difficulty, start the game
+                    case model.selectedDifficulty of
+                        Just difficulty ->
+                            ( { model
+                                | route = Game (WithBot difficulty)
+                                , botDifficultyMenuOpen = False
+                                , board = newBoard
+                                , moveHistory = []
+                                , currentMoveIndex = -1
+                                , selectedDifficulty = Nothing
+                                , humanPlaysFirst = humanStarts
+                                , botThinking = not humanStarts
+                              }
+                            , cmd
+                            )
+
+                        Nothing ->
+                            ( model, Cmd.none )
+                            
+        Tick newTime ->
+            ( model, Cmd.none )
+
+        ShowAbandonConfirm ->
+            ( { model | showAbandonConfirm = True }, Cmd.none )
+
+        HideAbandonConfirm ->
+            ( { model | showAbandonConfirm = False }, Cmd.none )
+
+        ConfirmAbandon ->
+            ( { model 
+              | route = Home
+              , showAbandonConfirm = False
+              , onlineOpponent = Nothing
+              , onlinePlayer = Nothing
+              , board = initialBoard X
+              , moveHistory = []
+              , currentMoveIndex = -1
+              }
+            , Lamdera.sendToBackend LeaveMatchmaking
+            )
 
 
 handlePlayerMove : Model -> Int -> Int -> ( Model, Cmd FrontendMsg )
@@ -652,10 +815,11 @@ evaluatePosition board forPlayer =
                 evaluateLine line =
                     let
                         playerCount =
-                            List.count (\cell -> cell == Filled forPlayer) line
+                            List.filter (\cell -> cell == Filled forPlayer) line
+                                |> List.length
 
                         opponentCount =
-                            List.count
+                            List.filter
                                 (\cell ->
                                     case cell of
                                         Filled p ->
@@ -665,9 +829,11 @@ evaluatePosition board forPlayer =
                                             False
                                 )
                                 line
+                                |> List.length
 
                         emptyCount =
-                            List.count ((==) Empty) line
+                            List.filter ((==) Empty) line
+                                |> List.length
                     in
                     if playerCount == 3 then
                         100
@@ -907,30 +1073,22 @@ checkWinner : List CellState -> Maybe Player
 checkWinner cells =
     let
         winningCombinations =
-            [ -- Rows
-              [ 0, 1, 2 ]
+            [ [ 0, 1, 2 ]
             , [ 3, 4, 5 ]
             , [ 6, 7, 8 ]
-
-            -- Columns
             , [ 0, 3, 6 ]
             , [ 1, 4, 7 ]
             , [ 2, 5, 8 ]
-
-            -- Diagonals
             , [ 0, 4, 8 ]
             , [ 2, 4, 6 ]
             ]
 
-        getCellState index =
-            List.drop index cells |> List.head |> Maybe.withDefault Empty
-
-        checkCombination indexes =
-            case List.map getCellState indexes of
-                (Filled player) :: rest ->
-                    if List.all ((==) (Filled player)) rest then
-                        Just player
-
+        checkCombination : List Int -> Maybe Player
+        checkCombination indices =
+            case List.map (\i -> List.getAt i cells) indices of
+                [ Just (Filled p1), Just (Filled p2), Just (Filled p3) ] ->
+                    if p1 == p2 && p2 == p3 then
+                        Just p1
                     else
                         Nothing
 
@@ -984,7 +1142,18 @@ checkBigBoardWinner boards =
 
 updateFromBackend : ToFrontend -> Model -> ( Model, Cmd FrontendMsg )
 updateFromBackend msg model =
-    ( model, Cmd.none )
+    case msg of
+        NoOpToFrontend ->
+            ( model, Cmd.none )
+
+        GameFound data ->
+            update (ReceivedGameFound data) model
+
+        OpponentMove move ->
+            update (ReceivedOpponentMove move) model
+
+        OpponentLeft ->
+            update (ReceivedOpponentLeft) model
 
 
 view : Model -> Browser.Document FrontendMsg
@@ -1026,6 +1195,11 @@ view model =
                     50% { opacity: 1; }
                     100% { opacity: 0.5; }
                 }
+                @keyframes bigBoardBlink {
+                    0% { opacity: 0.8; }
+                    50% { opacity: 1; }
+                    100% { opacity: 0.8; }
+                }
             """
             ]
         , div
@@ -1051,7 +1225,7 @@ view model =
             ([ viewLanguageSelector model
              , case model.route of
                 Home ->
-                    viewHome model
+                    viewHome model t
 
                 Game mode ->
                     viewGame model mode
@@ -1089,21 +1263,29 @@ viewGameButton model label msg =
         [ text label ]
 
 
-viewHome : Model -> Html FrontendMsg
-viewHome model =
+viewHome : Model -> Translation -> Html FrontendMsg
+viewHome model t =
     let
-        t =
-            translations model.language
+        darkModeStyles =
+            if model.darkMode then
+                [ style "background-color" Color.darkBackground
+                , style "color" Color.darkText
+                ]
+            else
+                [ style "background-color" Color.lightBackground
+                , style "color" Color.lightText
+                ]
     in
     div
-        [ style "background-color" (Color.getBackground model.darkMode)
-        , style "border-radius" "20px"
-        , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
-        , style "padding" "40px"
-        , style "text-align" "center"
-        , style "max-width" "400px"
-        , style "width" "90%"
-        ]
+        ([ style "border-radius" "20px"
+         , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
+         , style "padding" "40px"
+         , style "text-align" "center"
+         , style "max-width" "400px"
+         , style "width" "90%"
+         ]
+            ++ darkModeStyles
+        )
         [ h1
             [ style "margin" "0 0 20px 0"
             , style "color" (Color.getText model.darkMode)
@@ -1126,14 +1308,37 @@ viewHome model =
             [ viewGameButton model t.playWithFriend StartGameWithFriend
             , if model.botDifficultyMenuOpen then
                 viewBotDifficultyMenu model
-
               else
                 viewGameButton model t.playWithBot StartGameWithBot
-            , viewGameButton model t.rules ToggleRulesModal
+            , viewGameButton model t.rulesTitle ToggleRulesModal
+            , button
+                [ class "menu-button"
+                , onClick StartOnlineGame
+                , disabled model.inMatchmaking
+                , style "padding" "15px 20px"
+                , style "font-size" "0.8em"
+                , style "font-family" "inherit"
+                , style "background-color"
+                    (if model.darkMode then
+                        Color.darkSecondaryBackground
+                     else
+                        Color.primary
+                    )
+                , style "color" "white"
+                , style "border" "none"
+                , style "border-radius" "10px"
+                , style "cursor" (if model.inMatchmaking then "not-allowed" else "pointer")
+                , style "transition" "all 0.2s ease"
+                , style "box-shadow" "0 4px 6px rgba(0, 0, 0, 0.2)"
+                , style "margin" "10px"
+                , style "width" "100%"
+                , style "max-width" "300px"
+                , style "opacity" (if model.inMatchmaking then "0.7" else "1")
+                ]
+                [ text (if model.inMatchmaking then t.searching else t.playOnline) ]
             ]
         , if model.rulesModalVisible then
             viewRulesModal model
-
           else
             text ""
         ]
@@ -1182,54 +1387,51 @@ viewGame model mode =
         showPlayForMeButton =
             case mode of
                 WithBot _ ->
-                    model.board.currentPlayer == X && model.board.winner == Nothing
+                    model.board.currentPlayer == X && model.board.winner == Nothing && model.currentMoveIndex == List.length model.moveHistory - 1
 
                 _ ->
                     False
     in
     div
-        ([ style "border-radius" "20px"
-         , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
-         , style "padding" "20px"
-         , style "background-color" (Color.getBackground model.darkMode)
-         , style "display" "flex"
+        ([ style "display" "flex"
          , style "flex-direction" "column"
-         , style "gap" "15px"
-         , style "width" "min(95vw, 600px)"
+         , style "padding" "20px"
+         , style "border-radius" "20px"
+         , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
+         , style "max-width" "800px"
+         , style "width" "90%"
          , style "box-sizing" "border-box"
+         , style "position" "relative"
          ]
             ++ darkModeStyles
         )
         [ div
-            [ style "display" "flex"
-            , style "flex-direction" "column"
-            , style "gap" "5px"
+            [ style "text-align" "center"
+            , style "margin-bottom" "20px"
             ]
-            [ div
-                [ style "font-weight" "600"
-                , style "font-size" "1.2em"
-                , style "font-family" "inherit"
-                ]
-                [ text <|
-                    case mode of
-                        WithFriend ->
-                            t.playingWithFriend
+            [ text <|
+                case mode of
+                    WithFriend ->
+                        t.playingWithFriend
 
-                        WithBot difficulty ->
-                            t.playingWithBot <|
-                                case difficulty of
-                                    Easy ->
-                                        t.easy
+                    WithBot difficulty ->
+                        t.playingWithBot
+                            (case difficulty of
+                                Easy ->
+                                    t.easy
 
-                                    Medium ->
-                                        t.medium
+                                Medium ->
+                                    t.medium
 
-                                    Hard ->
-                                        t.hard
+                                Hard ->
+                                    t.hard
 
-                                    Elite ->
-                                        t.elite
-                ]
+                                Elite ->
+                                    t.elite
+                            )
+
+                    OnlineGame ->
+                        t.playingOnline
             , viewStatus model
             ]
         , div
@@ -1250,7 +1452,6 @@ viewGame model mode =
                     , style "background-color"
                         (if model.board.currentPlayer == X && model.board.winner == Nothing && not model.botThinking then
                             Color.primary
-
                          else
                             Color.disabled
                         )
@@ -1260,7 +1461,6 @@ viewGame model mode =
                     , style "cursor"
                         (if model.board.currentPlayer == X && model.board.winner == Nothing && not model.botThinking then
                             "pointer"
-
                          else
                             "not-allowed"
                         )
@@ -1280,9 +1480,8 @@ viewGame model mode =
                 , style "padding" "8px"
                 , style "font-size" "1.2em"
                 , style "background-color"
-                    (if model.currentMoveIndex > 0 then
+                    (if model.currentMoveIndex >= 0 then
                         Color.primary
-
                      else
                         Color.disabled
                     )
@@ -1290,9 +1489,8 @@ viewGame model mode =
                 , style "border" "none"
                 , style "border-radius" "6px"
                 , style "cursor"
-                    (if model.currentMoveIndex > 0 then
+                    (if model.currentMoveIndex >= 0 then
                         "pointer"
-
                      else
                         "not-allowed"
                     )
@@ -1309,7 +1507,6 @@ viewGame model mode =
                 , style "background-color"
                     (if model.currentMoveIndex < List.length model.moveHistory - 1 then
                         Color.primary
-
                      else
                         Color.disabled
                     )
@@ -1319,7 +1516,6 @@ viewGame model mode =
                 , style "cursor"
                     (if model.currentMoveIndex < List.length model.moveHistory - 1 then
                         "pointer"
-
                      else
                         "not-allowed"
                     )
@@ -1336,20 +1532,74 @@ viewGame model mode =
             , style "flex-wrap" "wrap"
             , style "margin-top" "10px"
             ]
-            [ button
-                [ style "flex" "1"
-                , style "padding" "12px"
-                , style "font-size" "0.8em"
-                , style "font-family" "inherit"
-                , style "background-color" Color.danger
-                , style "color" "white"
-                , style "border" "none"
-                , style "border-radius" "10px"
-                , style "cursor" "pointer"
-                , style "transition" "all 0.2s ease"
-                , onClick ReturnToMenu
-                ]
-                [ text t.backToMenu ]
+            [ case mode of
+                OnlineGame ->
+                    if model.showAbandonConfirm then
+                        div 
+                            [ style "display" "flex"
+                            , style "gap" "10px"
+                            , style "width" "100%"
+                            ]
+                            [ button
+                                [ style "flex" "1"
+                                , style "padding" "12px"
+                                , style "font-size" "0.8em"
+                                , style "font-family" "inherit"
+                                , style "background-color" Color.danger
+                                , style "color" "white"
+                                , style "border" "none"
+                                , style "border-radius" "10px"
+                                , style "cursor" "pointer"
+                                , style "transition" "all 0.2s ease"
+                                , onClick ConfirmAbandon
+                                ]
+                                [ text t.confirmAbandon ]
+                            , button
+                                [ style "flex" "1"
+                                , style "padding" "12px"
+                                , style "font-size" "0.8em"
+                                , style "font-family" "inherit"
+                                , style "background-color" Color.primary
+                                , style "color" "white"
+                                , style "border" "none"
+                                , style "border-radius" "10px"
+                                , style "cursor" "pointer"
+                                , style "transition" "all 0.2s ease"
+                                , onClick HideAbandonConfirm
+                                ]
+                                [ text t.cancelAbandon ]
+                            ]
+                    else
+                        button
+                            [ style "flex" "1"
+                            , style "padding" "12px"
+                            , style "font-size" "0.8em"
+                            , style "font-family" "inherit"
+                            , style "background-color" Color.danger
+                            , style "color" "white"
+                            , style "border" "none"
+                            , style "border-radius" "10px"
+                            , style "cursor" "pointer"
+                            , style "transition" "all 0.2s ease"
+                            , onClick ShowAbandonConfirm
+                            ]
+                            [ text t.abandon ]
+
+                _ ->
+                    button
+                        [ style "flex" "1"
+                        , style "padding" "12px"
+                        , style "font-size" "0.8em"
+                        , style "font-family" "inherit"
+                        , style "background-color" Color.danger
+                        , style "color" "white"
+                        , style "border" "none"
+                        , style "border-radius" "10px"
+                        , style "cursor" "pointer"
+                        , style "transition" "all 0.2s ease"
+                        , onClick ReturnToMenu
+                        ]
+                        [ text t.backToMenu ]
             ]
         ]
 
@@ -1409,6 +1659,19 @@ viewBotDifficultyMenu model =
                         , onClick (StartWithPlayer False)
                         ]
                         [ text t.botStarts ]
+                    , button
+                        [ style "flex" "1"
+                        , style "padding" "8px"
+                        , style "font-size" "0.9em"
+                        , style "background-color" Color.primary
+                        , style "color" "white"
+                        , style "border" "none"
+                        , style "border-radius" "6px"
+                        , style "cursor" "pointer"
+                        , style "font-family" "inherit"
+                        , onClick (StartWithRandomPlayer)
+                        ]
+                        [ text t.randomStarts ]
                     ]
 
             Nothing ->
@@ -1481,14 +1744,34 @@ viewStatus model =
                         t.playerWins (I18n.playerToString model.language player)
 
                     Nothing ->
-                        if model.board.currentPlayer == X then
-                            t.playerXTurn
-
+                        if isBigBoardComplete model.board then
+                            t.draw
                         else
-                            t.playerOTurn
+                            case model.route of
+                                Game (WithBot _) ->
+                                    if model.board.currentPlayer == O then
+                                        "🤖"
+                                    else
+                                        "C'est votre tour"
+                                    
+                                Game OnlineGame ->
+                                    case model.onlinePlayer of
+                                        Just player ->
+                                            if model.onlineOpponent == Nothing then
+                                                t.waitingForOpponent
+                                            else if player == model.board.currentPlayer then
+                                                t.yourTurn
+                                            else
+                                                t.enemyTurn
+                                        Nothing ->
+                                            t.waitingForOpponent
+                                _ ->
+                                    if model.board.currentPlayer == X then
+                                        t.playerXTurn
+                                    else
+                                        t.playerOTurn
             , if model.botThinking then
                 viewThinkingIndicator
-
               else
                 text ""
             ]
@@ -1503,8 +1786,8 @@ viewThinkingIndicator =
         , style "gap" "4px"
         ]
         [ div [ style "animation" "thinking 1s infinite" ] [ text "•" ]
-        , div [ style "animation" "thinking 1s infinite 0.3s" ] [ text "•" ]
-        , div [ style "animation" "thinking 1s infinite 0.6s" ] [ text "•" ]
+        , div [ style "animation" "thinking 1s infinite 0.3s" ] [ text "���" ]
+        , div [ style "animation" "thinking 1s infinite 0.6s" ] [ text "��" ]
         ]
 
 
@@ -1617,8 +1900,24 @@ viewBigBoard model =
                 _ ->
                     False
 
+        isOpponentTurn =
+            case model.route of
+                Game OnlineGame ->
+                    case model.onlinePlayer of
+                        Just player ->
+                            player /= model.board.currentPlayer
+                        Nothing ->
+                            False
+                _ ->
+                    False
+
+        isViewingHistory =
+            model.currentMoveIndex < List.length model.moveHistory - 1
+
         shouldBlink =
-            isBotTurn && model.board.activeBoard == Nothing
+            not isViewingHistory &&
+            ((isBotTurn && model.board.activeBoard == Nothing) ||
+            (isOpponentTurn && model.board.activeBoard == Nothing))
     in
     div
         ([ style "display" "grid"
@@ -1632,7 +1931,7 @@ viewBigBoard model =
          , style "border-radius" "12px"
          ]
             ++ (if shouldBlink then
-                    [ style "animation" "blink 1s ease-in-out infinite" ]
+                    [ style "animation" "bigBoardBlink 1s ease-in-out infinite" ]
 
                 else
                     []
@@ -1660,8 +1959,22 @@ viewSmallBoard model boardIndex smallBoard =
                 _ ->
                     False
 
+        isOpponentTurn =
+            case model.route of
+                Game OnlineGame ->
+                    case model.onlinePlayer of
+                        Just player ->
+                            player /= model.board.currentPlayer
+                        Nothing ->
+                            False
+                _ ->
+                    False
+
+        isViewingHistory =
+            model.currentMoveIndex < List.length model.moveHistory - 1
+
         isClickable =
-            isActive && not isBotTurn
+            isActive && not isBotTurn && not isOpponentTurn && not isViewingHistory
 
         borderColor =
             if isActive then
@@ -1685,7 +1998,9 @@ viewSmallBoard model boardIndex smallBoard =
             [ style "box-shadow" ("inset 0 0 0 1px " ++ Color.getBorder model.darkMode) ]
 
         shouldBlink =
-            isActive && isBotTurn && model.board.activeBoard /= Nothing
+            not isViewingHistory &&
+            ((isActive && isBotTurn && model.board.activeBoard /= Nothing) ||
+            (isActive && isOpponentTurn))
     in
     div
         ([ style "background-color" backgroundColor
@@ -1938,17 +2253,25 @@ localStorageValueDecoder =
         (D.field "value" D.string)
 
 
-reconstructBoardFromMoves : List Move -> Int -> BigBoard
-reconstructBoardFromMoves moves upToIndex =
+reconstructBoardFromMoves : List Move -> Int -> BigBoard -> BigBoard
+reconstructBoardFromMoves moves upToIndex initialBoardState =
     let
         movesToApply =
             List.take (upToIndex + 1) moves
+
+        freshBoard =
+            { boards = List.repeat 9 emptySmallBoard
+            , currentPlayer = initialBoardState.initialPlayer
+            , activeBoard = Nothing
+            , winner = Nothing
+            , initialPlayer = initialBoardState.initialPlayer
+            }
     in
     List.foldl
         (\move board ->
             makeMove board move.boardIndex move.cellIndex
         )
-        initialBoard
+        freshBoard
         movesToApply
 
 
@@ -2016,3 +2339,74 @@ viewRulesModal model =
                 [ text t.close ]
             ]
         ]
+
+
+applyMove : Move -> BigBoard -> BigBoard
+applyMove move board =
+    let
+        updateSmallBoard : Int -> SmallBoard -> SmallBoard
+        updateSmallBoard cellIndex smallBoard =
+            let
+                newCells =
+                    List.indexedMap
+                        (\i cell ->
+                            if i == cellIndex then
+                                Filled move.player
+                            else
+                                cell
+                        )
+                        smallBoard.cells
+
+                smallBoardWinner =
+                    checkWinner newCells
+            in
+            { smallBoard | cells = newCells, winner = smallBoardWinner }
+
+        newBoards =
+            List.indexedMap
+                (\i smallBoard ->
+                    if i == move.boardIndex then
+                        updateSmallBoard move.cellIndex smallBoard
+                    else
+                        smallBoard
+                )
+                board.boards
+
+        nextPlayer =
+            case board.currentPlayer of
+                X ->
+                    O
+
+                O ->
+                    X
+
+        targetBoard =
+            List.getAt move.cellIndex newBoards
+
+        newActiveBoard =
+            case targetBoard of
+                Just b ->
+                    if b.winner /= Nothing then
+                        Nothing
+                    else if List.all (\cell -> cell /= Empty) b.cells then
+                        Nothing
+                    else
+                        Just move.cellIndex
+
+                Nothing ->
+                    Nothing
+
+        newWinner =
+            checkBigBoardWinner newBoards
+    in
+    { board
+        | boards = newBoards
+        , currentPlayer = nextPlayer
+        , activeBoard = newActiveBoard
+        , winner = newWinner
+    }
+
+
+isBigBoardComplete : BigBoard -> Bool
+isBigBoardComplete board =
+    List.all isSmallBoardComplete board.boards
