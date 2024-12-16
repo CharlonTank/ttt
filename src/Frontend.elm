@@ -2383,9 +2383,6 @@ viewRulesModal model =
     let
         t =
             translations model.language
-
-        stopPropagation msg =
-            Html.Events.stopPropagationOn "click" (D.succeed ( msg, True ))
     in
     div
         [ style "position" "fixed"
@@ -2406,6 +2403,7 @@ viewRulesModal model =
             , style "border-radius" "15px"
             , style "text-align" "center"
             , style "animation" "slideIn 0.3s ease-out"
+            , Html.Events.stopPropagationOn "click" (D.succeed ( NoOp, True ))
             ]
             [ h2
                 [ style "margin" "0 0 20px 0"
