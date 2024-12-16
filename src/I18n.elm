@@ -39,6 +39,17 @@ type alias Translation =
     , draw : String
     , youWon : String
     , youLost : String
+    , startTutorial : String
+    , skipTutorial : String
+    , nextStep : String
+    , tutorialIntro : String
+    , tutorialBasicMove : String
+    , tutorialBoardSelection : String
+    , tutorialWinningSmall : String
+    , tutorialFreeChoice : String
+    , tutorialWinningBig : String
+    , tutorialComplete : String
+    , tutorialTitle : String
     }
 
 
@@ -81,6 +92,17 @@ translations lang =
             , draw = "Match nul !"
             , youWon = "Vous avez gagné ! 🎉"
             , youLost = "Vous avez perdu ! 😢"
+            , startTutorial = "Commencer le tutoriel"
+            , skipTutorial = "Passer le tutoriel"
+            , nextStep = "Suivant"
+            , tutorialIntro = "Bienvenue dans l'Ultimate Tic Tac Toe ! Ce jeu est une version avancée du morpion où chaque case est elle-même un morpion. Prêt à découvrir les règles ?"
+            , tutorialBasicMove = "Pour commencer, vous jouez avec les X. Placez votre symbole dans la case en haut à droite du morpion central. C'est là que tout commence !"
+            , tutorialBoardSelection = "Excellent ! Voici la règle principale : votre adversaire doit jouer dans le petit morpion qui correspond à la position de votre dernier coup. Comme vous avez joué dans la case en haut à droite, votre adversaire devra jouer dans le petit morpion en haut à droite (en vert)."
+            , tutorialWinningSmall = "Pour gagner un petit morpion, alignez trois symboles comme dans un morpion classique. Cliquez sur la case du milieu pour gagner ce petit morpion !"
+            , tutorialFreeChoice = "Excellent ! Vous avez gagné le morpion central. Comme votre dernier coup était au centre et que ce morpion est maintenant terminé, votre adversaire peut jouer dans n'importe quel morpion non terminé !"
+            , tutorialWinningBig = "Bravo ! Pour gagner la partie, vous devez gagner trois petits morpions alignés sur le grand plateau. Continuez à jouer stratégiquement !"
+            , tutorialComplete = "Félicitations ! Vous maîtrisez maintenant les règles de base de l'Ultimate Tic Tac Toe. Prêt à relever le défi ?"
+            , tutorialTitle = "Mode : Tutoriel"
             }
 
         EN ->
@@ -119,6 +141,17 @@ translations lang =
             , draw = "It's a draw!"
             , youWon = "You won! 🎉"
             , youLost = "You lost! 😢"
+            , startTutorial = "Start Tutorial"
+            , skipTutorial = "Skip Tutorial"
+            , nextStep = "Next"
+            , tutorialIntro = "Welcome to Ultimate Tic Tac Toe! This game is an advanced version of Tic Tac Toe where each cell is itself a Tic Tac Toe board. Ready to learn the rules?"
+            , tutorialBasicMove = "To start, you play as X. Place your mark in the top-right cell of the center board. That's where it all begins!"
+            , tutorialBoardSelection = "Excellent! Here's the main rule: your opponent must play in the small board that corresponds to the position of your last move. Since you played in the top-right cell, your opponent must play in the top-right small board (highlighted in green)."
+            , tutorialWinningSmall = "To win a small board, get three marks in a line just like in regular Tic Tac Toe. Click the middle cell to win this small board!"
+            , tutorialFreeChoice = "Excellent! You've won the center board. Since your last move was in the center and this board is now complete, your opponent can play in any unfinished board!"
+            , tutorialWinningBig = "Well done! To win the game, you need to win three small boards in a line on the big board. Keep playing strategically!"
+            , tutorialComplete = "Congratulations! You now master the basic rules of Ultimate Tic Tac Toe. Ready to take on the challenge?"
+            , tutorialTitle = "Mode: Tutorial"
             }
 
 

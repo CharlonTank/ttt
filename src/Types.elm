@@ -6,9 +6,10 @@ import Dict exposing (Dict)
 import Json.Decode as D
 import Json.Encode as E
 import Lamdera exposing (ClientId)
-import Url exposing (Url)
 import Random
 import Time
+import Tutorial.Types exposing (TutorialStep)
+import Url exposing (Url)
 
 
 
@@ -93,28 +94,29 @@ type alias FrontendModel =
     { key : Key
     , board : BigBoard
     , route : Route
-    , botDifficultyMenuOpen : Bool
     , language : Language
-    , botThinking : Bool
+    , darkMode : Bool
     , moveHistory : List Move
     , currentMoveIndex : Int
-    , darkMode : Bool
+    , rulesModalVisible : Bool
     , humanPlaysFirst : Bool
     , frClickCount : Int
     , debuggerVisible : Bool
-    , debuggerPosition : { x : Float, y : Float }
+    , debuggerPosition : Position
     , isDraggingDebugger : Bool
-    , dragOffset : { x : Float, y : Float }
-    , debuggerSize : { width : Float, height : Float }
+    , dragOffset : Position
+    , debuggerSize : Size
     , isResizingDebugger : Bool
     , localStorageValues : Dict String String
     , selectedDifficulty : Maybe BotDifficulty
-    , rulesModalVisible : Bool
-    , inMatchmaking : Bool
-    , onlineOpponent : Maybe ClientId
     , onlinePlayer : Maybe Player
     , showAbandonConfirm : Bool
     , gameResult : GameResult
+    , tutorialState : Maybe TutorialStep
+    , botDifficultyMenuOpen : Bool
+    , botThinking : Bool
+    , inMatchmaking : Bool
+    , onlineOpponent : Maybe ClientId
     }
 
 
@@ -129,50 +131,54 @@ type alias BackendModel =
 type FrontendMsg
     = UrlClicked UrlRequest
     | UrlChanged Url
+    | NoOp
     | CellClicked Int Int
+    | BotMove
     | RestartGame
     | StartGameWithFriend
     | StartGameWithBot
-    | StartOnlineGame
     | SelectBotDifficulty BotDifficulty
-    | CancelBotDifficulty
+    | StartWithPlayer Bool
     | ReturnToMenu
-    | BotMove
+    | CancelBotDifficulty
+    | PlayForMe
     | ChangeLanguage Language
+    | CloseDebugger
     | UndoMove
     | RedoMove
     | ToggleDarkMode
-    | ReceivedLocalStorage { language : String, darkMode : Bool }
     | ToggleDebugMode
-    | CloseDebugger
+    | ReceivedLocalStorage { language : String, darkMode : Bool }
     | StartDraggingDebugger Float Float
     | StopDraggingDebugger
     | DragDebugger Float Float
     | StartResizingDebugger
     | StopResizingDebugger
     | ResizeDebugger Float Float
-    | NoOp
     | ReceivedLocalStorageValue String String
-    | StartWithPlayer Bool
-    | StartWithRandomPlayer
-    | PlayForMe
     | ToggleRulesModal
+    | StartOnlineGame
     | ReceivedGameFound { opponentId : ClientId, playerRole : Player }
     | ReceivedOpponentMove Move
     | ReceivedOpponentLeft
+    | StartWithRandomPlayer
     | GotTime Time.Posix
     | Tick Time.Posix
     | ShowAbandonConfirm
     | HideAbandonConfirm
     | ConfirmAbandon
+    | StartTutorial
+    | NextTutorialStep
+    | SkipTutorial
+    | CompleteTutorial
 
 
 type ToBackend
     = NoOpToBackend
     | JoinMatchmaking
     | LeaveMatchmaking
-    | MakeMove Int Int Player
     | AbandonGame
+    | MakeMove Int Int Player
 
 
 type BackendMsg
@@ -209,3 +215,15 @@ stringToLanguage str =
 
         _ ->
             FR
+
+
+type alias Position =
+    { x : Float
+    , y : Float
+    }
+
+
+type alias Size =
+    { width : Float
+    , height : Float
+    }
