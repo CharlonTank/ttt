@@ -11,14 +11,6 @@ import Types exposing (..)
 getTutorialBoard : TutorialStep -> BigBoard
 getTutorialBoard step =
     case step of
-        TutorialIntro ->
-            { boards = List.repeat 9 emptySmallBoard
-            , currentPlayer = X
-            , activeBoard = Nothing
-            , winner = Nothing
-            , initialPlayer = X
-            }
-
         TutorialBasicMove ->
             let
                 centerBoard =
@@ -360,9 +352,6 @@ getTutorialBoard step =
 isTutorialMoveValid : TutorialStep -> Int -> Int -> BigBoard -> Bool
 isTutorialMoveValid step boardIndex cellIndex board =
     case step of
-        TutorialIntro ->
-            True
-
         TutorialBasicMove ->
             boardIndex == 4 && cellIndex == 2
 

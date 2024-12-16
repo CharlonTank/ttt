@@ -13,12 +13,13 @@ app =
         { init = init
         , update = update
         , updateFromFrontend = updateFromFrontend
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = subscriptions
         }
 
 
-type alias Model =
-    BackendModel
+subscriptions : BackendModel -> Sub BackendMsg
+subscriptions _ =
+    Lamdera.onDisconnect PlayerDisconnected
 
 
 init : ( BackendModel, Cmd BackendMsg )
@@ -42,6 +43,45 @@ update msg model =
             ( { model | seed = Random.initialSeed (Time.posixToMillis time) }
             , Cmd.none
             )
+
+        PlayerDisconnected _ clientId ->
+            handleGameAbandon clientId { model | matchmakingQueue = List.filter ((/=) clientId) model.matchmakingQueue }
+
+
+handleGameAbandon : ClientId -> BackendModel -> ( BackendModel, Cmd BackendMsg )
+handleGameAbandon clientId model =
+    let
+        findGame =
+            List.filter
+                (\( player1, player2, _ ) ->
+                    player1 == clientId || player2 == clientId
+                )
+                model.activeGames
+                |> List.head
+    in
+    case findGame of
+        Just ( player1, player2, _ ) ->
+            let
+                opponent =
+                    if player1 == clientId then
+                        player2
+
+                    else
+                        player1
+
+                updatedGames =
+                    List.filter
+                        (\( p1, p2, _ ) ->
+                            not (p1 == player1 && p2 == player2)
+                        )
+                        model.activeGames
+            in
+            ( { model | activeGames = updatedGames }
+            , sendToFrontend opponent OpponentLeft
+            )
+
+        Nothing ->
+            ( model, Cmd.none )
 
 
 updateFromFrontend : SessionId -> ClientId -> ToBackend -> BackendModel -> ( BackendModel, Cmd BackendMsg )
@@ -99,44 +139,13 @@ updateFromFrontend sessionId clientId msg model =
                         , Cmd.none
                         )
 
-        LeaveMatchmaking ->
+        LeaveMatchmakingToBackend ->
             ( { model | matchmakingQueue = List.filter ((/=) clientId) model.matchmakingQueue }
             , Cmd.none
             )
 
         AbandonGame ->
-            let
-                findGame =
-                    List.filter
-                        (\( player1, player2, _ ) ->
-                            player1 == clientId || player2 == clientId
-                        )
-                        model.activeGames
-                        |> List.head
-            in
-            case findGame of
-                Just ( player1, player2, _ ) ->
-                    let
-                        opponent =
-                            if player1 == clientId then
-                                player2
-
-                            else
-                                player1
-
-                        updatedGames =
-                            List.filter
-                                (\( p1, p2, _ ) ->
-                                    not (p1 == player1 && p2 == player2)
-                                )
-                                model.activeGames
-                    in
-                    ( { model | activeGames = updatedGames }
-                    , sendToFrontend opponent OpponentLeft
-                    )
-
-                Nothing ->
-                    ( model, Cmd.none )
+            handleGameAbandon clientId model
 
         MakeMove boardIndex cellIndex player ->
             let

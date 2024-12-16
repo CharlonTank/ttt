@@ -17,9 +17,6 @@ viewTutorialCell model boardIndex isClickableIndex cellStyles cellIndex cellStat
             case model.tutorialState of
                 Just step ->
                     case step of
-                        TutorialIntro ->
-                            False
-
                         TutorialBasicMove ->
                             boardIndex == 4 && cellIndex == 2
 

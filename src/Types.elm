@@ -166,14 +166,14 @@ type FrontendMsg
     | ConfirmAbandon
     | StartTutorial
     | NextTutorialStep
-    | SkipTutorial
     | CompleteTutorial
+    | LeaveMatchmaking
 
 
 type ToBackend
     = NoOpToBackend
     | JoinMatchmaking
-    | LeaveMatchmaking
+    | LeaveMatchmakingToBackend
     | AbandonGame
     | MakeMove Int Int Player
 
@@ -181,6 +181,7 @@ type ToBackend
 type BackendMsg
     = NoOpBackendMsg
     | GotInitialTime Time.Posix
+    | PlayerDisconnected Lamdera.SessionId ClientId
 
 
 type ToFrontend

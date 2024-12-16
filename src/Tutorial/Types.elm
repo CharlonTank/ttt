@@ -2,8 +2,7 @@ module Tutorial.Types exposing (TutorialStep(..))
 
 
 type TutorialStep
-    = TutorialIntro
-    | TutorialBasicMove
+    = TutorialBasicMove
     | TutorialBoardSelection
     | TutorialWinningSmall
     | TutorialFreeChoice

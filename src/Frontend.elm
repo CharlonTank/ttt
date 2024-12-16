@@ -483,6 +483,11 @@ update msg model =
             , Lamdera.sendToBackend JoinMatchmaking
             )
 
+        LeaveMatchmaking ->
+            ( { model | inMatchmaking = False }
+            , Lamdera.sendToBackend LeaveMatchmakingToBackend
+            )
+
         StartWithRandomPlayer ->
             ( model, Task.perform GotTime Time.now )
 
@@ -568,8 +573,8 @@ update msg model =
 
         StartTutorial ->
             ( { model
-                | tutorialState = Just TutorialIntro
-                , board = getTutorialBoard TutorialIntro
+                | tutorialState = Just TutorialBasicMove
+                , board = getTutorialBoard TutorialBasicMove
                 , route = Game WithFriend
                 , moveHistory = []
                 , currentMoveIndex = -1
@@ -585,9 +590,6 @@ update msg model =
                     let
                         nextStep =
                             case tutorialState of
-                                TutorialIntro ->
-                                    Just TutorialBasicMove
-
                                 TutorialBasicMove ->
                                     Just TutorialBoardSelection
 
@@ -618,15 +620,6 @@ update msg model =
 
                 _ ->
                     ( model, Cmd.none )
-
-        SkipTutorial ->
-            ( { model
-                | tutorialState = Nothing
-                , route = Home
-                , board = initialBoard X
-              }
-            , Cmd.none
-            )
 
         CompleteTutorial ->
             ( { model
@@ -742,9 +735,6 @@ handlePlayerMove model boardIndex cellIndex =
         nextTutorialStep =
             if shouldProgressTutorial then
                 case model.tutorialState of
-                    Just TutorialIntro ->
-                        Just TutorialBasicMove
-
                     Just TutorialBasicMove ->
                         Just TutorialBoardSelection
 
@@ -1628,8 +1618,13 @@ viewHome model t =
             , viewGameButton model t.rulesTitle ToggleRulesModal
             , button
                 [ class "menu-button"
-                , onClick StartOnlineGame
-                , disabled model.inMatchmaking
+                , onClick
+                    (if model.inMatchmaking then
+                        LeaveMatchmaking
+
+                     else
+                        StartOnlineGame
+                    )
                 , style "padding" "15px 20px"
                 , style "font-size" "0.8em"
                 , style "font-family" "inherit"
@@ -1643,13 +1638,7 @@ viewHome model t =
                 , style "color" "white"
                 , style "border" "none"
                 , style "border-radius" "10px"
-                , style "cursor"
-                    (if model.inMatchmaking then
-                        "not-allowed"
-
-                     else
-                        "pointer"
-                    )
+                , style "cursor" "pointer"
                 , style "transition" "all 0.2s ease"
                 , style "box-shadow" "0 4px 6px rgba(0, 0, 0, 0.2)"
                 , style "margin" "10px"
@@ -1663,13 +1652,19 @@ viewHome model t =
                         "1"
                     )
                 ]
-                [ text
-                    (if model.inMatchmaking then
-                        t.searching
+                [ if model.inMatchmaking then
+                    div
+                        [ style "display" "flex"
+                        , style "align-items" "center"
+                        , style "justify-content" "center"
+                        , style "gap" "8px"
+                        ]
+                        [ text t.searching
+                        , viewThinkingIndicator
+                        ]
 
-                     else
-                        t.playOnline
-                    )
+                  else
+                    text t.playOnline
                 ]
             ]
         , if model.rulesModalVisible then
@@ -1729,19 +1724,23 @@ viewGame model mode =
     div
         ([ style "display" "flex"
          , style "flex-direction" "column"
-         , style "padding" "0"
+         , style "padding-top" "60px"
+         , style "padding-bottom" "60px"
          , style "border-radius" "20px"
          , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
          , style "width" "100%"
+         , style "max-width" "100vh"
+         , style "margin" "auto"
          , style "box-sizing" "border-box"
          , style "position" "relative"
+         , style "height" "100dvh"
          ]
             ++ darkModeStyles
         )
         [ div
             [ style "text-align" "center"
-            , style "margin-bottom" "10px"
             , style "padding" "10px"
+            , style "flex-shrink" "0"
             ]
             [ text gameTitle
             , viewStatus model
@@ -1752,11 +1751,19 @@ viewGame model mode =
             , style "align-items" "center"
             , style "justify-content" "center"
             , style "min-height" "0"
-            , style "margin-bottom" "10px"
+            , style "padding" "10px"
+            , style "position" "relative"
             ]
-            [ viewBigBoard model ]
+            [ div
+                [ style "width" "min(100%, calc(100vh - 300px))"
+                , style "aspect-ratio" "1/1"
+                ]
+                [ viewBigBoard model ]
+            ]
         , div
-            [ style "padding" "10px" ]
+            [ style "padding" "10px"
+            , style "flex-shrink" "0"
+            ]
             [ case mode of
                 WithBot _ ->
                     div []
@@ -1900,80 +1907,88 @@ viewGame model mode =
                         text ""
 
                 WithFriend ->
-                    button
-                        [ style "padding" "12px"
-                        , style "font-size" "0.8em"
-                        , style "font-family" "inherit"
-                        , style "background-color" Color.danger
+                    if model.tutorialState == Nothing then
+                        button
+                            [ style "padding" "12px"
+                            , style "font-size" "0.8em"
+                            , style "font-family" "inherit"
+                            , style "background-color" Color.danger
+                            , style "color" "white"
+                            , style "border" "none"
+                            , style "border-radius" "10px"
+                            , style "cursor" "pointer"
+                            , style "transition" "all 0.2s ease"
+                            , style "margin-bottom" "10px"
+                            , style "width" "100%"
+                            , onClick ReturnToMenu
+                            ]
+                            [ text t.backToMenu ]
+
+                    else
+                        text ""
+            , if model.tutorialState == Nothing then
+                div
+                    [ style "display" "flex"
+                    , style "gap" "10px"
+                    ]
+                    [ button
+                        [ style "flex" "1"
+                        , style "padding" "8px"
+                        , style "font-size" "1.2em"
+                        , style "background-color"
+                            (if model.currentMoveIndex >= 0 then
+                                Color.primary
+
+                             else
+                                Color.disabled
+                            )
                         , style "color" "white"
                         , style "border" "none"
-                        , style "border-radius" "10px"
-                        , style "cursor" "pointer"
-                        , style "transition" "all 0.2s ease"
-                        , style "margin-bottom" "10px"
-                        , style "width" "100%"
-                        , onClick ReturnToMenu
+                        , style "border-radius" "6px"
+                        , style "cursor"
+                            (if model.currentMoveIndex >= 0 then
+                                "pointer"
+
+                             else
+                                "not-allowed"
+                            )
+                        , style "display" "flex"
+                        , style "align-items" "center"
+                        , style "justify-content" "center"
+                        , onClick UndoMove
                         ]
-                        [ text t.backToMenu ]
-            , div
-                [ style "display" "flex"
-                , style "gap" "10px"
-                ]
-                [ button
-                    [ style "flex" "1"
-                    , style "padding" "8px"
-                    , style "font-size" "1.2em"
-                    , style "background-color"
-                        (if model.currentMoveIndex >= 0 then
-                            Color.primary
+                        [ text "↩" ]
+                    , button
+                        [ style "flex" "1"
+                        , style "padding" "8px"
+                        , style "font-size" "1.2em"
+                        , style "background-color"
+                            (if model.currentMoveIndex < List.length model.moveHistory - 1 then
+                                Color.primary
 
-                         else
-                            Color.disabled
-                        )
-                    , style "color" "white"
-                    , style "border" "none"
-                    , style "border-radius" "6px"
-                    , style "cursor"
-                        (if model.currentMoveIndex >= 0 then
-                            "pointer"
+                             else
+                                Color.disabled
+                            )
+                        , style "color" "white"
+                        , style "border" "none"
+                        , style "border-radius" "6px"
+                        , style "cursor"
+                            (if model.currentMoveIndex < List.length model.moveHistory - 1 then
+                                "pointer"
 
-                         else
-                            "not-allowed"
-                        )
-                    , style "display" "flex"
-                    , style "align-items" "center"
-                    , style "justify-content" "center"
-                    , onClick UndoMove
+                             else
+                                "not-allowed"
+                            )
+                        , style "display" "flex"
+                        , style "align-items" "center"
+                        , style "justify-content" "center"
+                        , onClick RedoMove
+                        ]
+                        [ text "↪" ]
                     ]
-                    [ text "↩" ]
-                , button
-                    [ style "flex" "1"
-                    , style "padding" "8px"
-                    , style "font-size" "1.2em"
-                    , style "background-color"
-                        (if model.currentMoveIndex < List.length model.moveHistory - 1 then
-                            Color.primary
 
-                         else
-                            Color.disabled
-                        )
-                    , style "color" "white"
-                    , style "border" "none"
-                    , style "border-radius" "6px"
-                    , style "cursor"
-                        (if model.currentMoveIndex < List.length model.moveHistory - 1 then
-                            "pointer"
-
-                         else
-                            "not-allowed"
-                        )
-                    , style "display" "flex"
-                    , style "align-items" "center"
-                    , style "justify-content" "center"
-                    , onClick RedoMove
-                    ]
-                    [ text "↪" ]
-                ]
+              else
+                text ""
             ]
         ]
 
@@ -2066,7 +2081,6 @@ viewBotDifficultyMenu model =
             ]
             [ text t.back ]
         ]
-
 
 
 viewDifficultyButton : FrontendModel -> String -> BotDifficulty -> Html FrontendMsg
@@ -2203,7 +2217,7 @@ viewLanguageSelector : FrontendModel -> Html FrontendMsg
 viewLanguageSelector model =
     div
         [ style "position" "absolute"
-        , style "top" "20px"
+        , style "top" "5px"
         , style "right" "20px"
         , style "display" "flex"
         , style "gap" "10px"
@@ -2358,19 +2372,9 @@ viewBigBoard model =
 
             else
                 []
-
-        opacity =
-            case model.tutorialState of
-                Just TutorialIntro ->
-                    [ style "opacity" "0.5"
-                    , style "pointer-events" "none"
-                    ]
-
-                _ ->
-                    []
     in
     div
-        (boardStyle ++ blinkStyle ++ opacity)
+        (boardStyle ++ blinkStyle)
         boardElements
 
 
@@ -2411,9 +2415,6 @@ viewSmallBoard model boardIndex smallBoardData =
 
         isTutorialBoard =
             case model.tutorialState of
-                Just TutorialIntro ->
-                    False
-
                 Just TutorialBasicMove ->
                     boardIndex == 4
 
@@ -2528,7 +2529,6 @@ viewSmallBoard model boardIndex smallBoardData =
             ++ opacity
         )
         cellElements
-
 
 
 viewCell : FrontendModel -> Int -> Bool -> List (Html.Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
@@ -2818,6 +2818,7 @@ viewRulesModal model =
             , style "padding" "30px"
             , style "border-radius" "15px"
             , style "text-align" "center"
+            , style "width" "min(100%, 1200px)"
             , style "animation" "slideIn 0.3s ease-out"
             , Html.Events.stopPropagationOn "click" (D.succeed ( NoOp, True ))
             ]
@@ -2876,9 +2877,6 @@ shouldEnableNextButton model =
     case model.tutorialState of
         Just step ->
             case step of
-                TutorialIntro ->
-                    True
-
                 TutorialBasicMove ->
                     let
                         centerBoard =
@@ -2918,9 +2916,6 @@ viewTutorialOverlay model =
 
                 tutorialMessage =
                     case step of
-                        TutorialIntro ->
-                            t.tutorialIntro
-
                         TutorialBasicMove ->
                             t.tutorialBasicMove
 
@@ -2938,34 +2933,34 @@ viewTutorialOverlay model =
 
                 stepNumber =
                     case step of
-                        TutorialIntro ->
+                        TutorialBasicMove ->
                             1
 
-                        TutorialBasicMove ->
+                        TutorialBoardSelection ->
                             2
 
-                        TutorialBoardSelection ->
+                        TutorialWinningSmall ->
                             3
 
-                        TutorialWinningSmall ->
+                        TutorialFreeChoice ->
                             4
 
-                        TutorialFreeChoice ->
-                            5
-
                         TutorialWinningBig ->
-                            6
+                            5
 
                 overlayStyles =
                     case step of
-                        TutorialIntro ->
-                            [ style "top" "50%"
-                            , style "transform" "translate(-50%, -50%)"
+                        TutorialWinningBig ->
+                            [ style "bottom" "70%"
+                            , style "transform" "translate(-50%, 0%)"
                             ]
 
                         _ ->
-                            [ style "bottom" "20px"
-                            , style "transform" "translateX(-50%)"
+                            [ style "bottom" "0px"
+                            , style "left" "0"
+                            , style "right" "0"
+                            , style "margin-left" "auto"
+                            , style "margin-right" "auto"
                             ]
 
                 isNextEnabled =
@@ -2982,41 +2977,18 @@ viewTutorialOverlay model =
                             , style "border-radius" "6px"
                             , style "cursor" "pointer"
                             , style "transition" "all 0.2s ease"
-                            , onClick SkipTutorial
-                            ]
-                            [ text t.skipTutorial ]
-                        , button
-                            [ style "padding" "10px 20px"
-                            , style "font-size" "0.9em"
-                            , style "background-color" Color.primary
-                            , style "color" "white"
-                            , style "border" "none"
-                            , style "border-radius" "6px"
-                            , style "cursor" "pointer"
-                            , style "transition" "all 0.2s ease"
                             , onClick NextTutorialStep
                             ]
                             [ text t.nextStep ]
                         ]
+
                     else
-                        [ button
-                            [ style "padding" "10px 20px"
-                            , style "font-size" "0.9em"
-                            , style "background-color" Color.primary
-                            , style "color" "white"
-                            , style "border" "none"
-                            , style "border-radius" "6px"
-                            , style "cursor" "pointer"
-                            , style "transition" "all 0.2s ease"
-                            , onClick SkipTutorial
-                            ]
-                            [ text t.skipTutorial ]
-                        ]
+                        []
             in
             div
                 ([ style "position" "fixed"
                  , style "left" "50%"
-                 , style "background-color" (Color.getBackground model.darkMode)
+                 , style "background-color" (Color.withAlpha (Color.getBackground model.darkMode) 0.85)
                  , style "padding" "20px"
                  , style "border-radius" "15px"
                  , style "box-shadow" "0 4px 12px rgba(0, 0, 0, 0.2)"
@@ -3025,6 +2997,7 @@ viewTutorialOverlay model =
                  , style "text-align" "center"
                  , style "animation" "slideIn 0.3s ease-out"
                  , style "z-index" "1000"
+                 , style "backdrop-filter" "blur(5px)"
                  ]
                     ++ overlayStyles
                 )
