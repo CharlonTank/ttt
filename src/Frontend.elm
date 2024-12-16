@@ -1916,6 +1916,7 @@ viewLanguageSelector model =
         , style "border-radius" "10px"
         , style "backdrop-filter" "blur(10px)"
         , style "box-shadow" "0 2px 10px rgba(0, 0, 0, 0.1)"
+        , style "z-index" "1000"
         ]
         [ viewDarkModeButton model.darkMode
         , div [ style "width" "1px", style "height" "20px", style "background-color" (Color.getBorder model.darkMode) ] []
