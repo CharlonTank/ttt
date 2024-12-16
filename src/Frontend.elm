@@ -1724,8 +1724,8 @@ viewGame model mode =
     div
         ([ style "display" "flex"
          , style "flex-direction" "column"
-         , style "padding-top" "60px"
-         , style "padding-bottom" "60px"
+         , style "padding-top" "20px"
+         , style "padding-bottom" "20px"
          , style "border-radius" "20px"
          , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
          , style "width" "100%"
@@ -1733,7 +1733,7 @@ viewGame model mode =
          , style "margin" "auto"
          , style "box-sizing" "border-box"
          , style "position" "relative"
-         , style "height" "100dvh"
+         , style "height" "100%"
          ]
             ++ darkModeStyles
         )
