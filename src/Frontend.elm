@@ -1729,11 +1729,10 @@ viewGame model mode =
     div
         ([ style "display" "flex"
          , style "flex-direction" "column"
-         , style "padding" "20px"
+         , style "padding" "0"
          , style "border-radius" "20px"
          , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
-         , style "max-width" "800px"
-         , style "width" "90%"
+         , style "width" "100%"
          , style "box-sizing" "border-box"
          , style "position" "relative"
          ]
@@ -1741,7 +1740,8 @@ viewGame model mode =
         )
         [ div
             [ style "text-align" "center"
-            , style "margin-bottom" "20px"
+            , style "margin-bottom" "10px"
+            , style "padding" "10px"
             ]
             [ text gameTitle
             , viewStatus model
@@ -1752,224 +1752,228 @@ viewGame model mode =
             , style "align-items" "center"
             , style "justify-content" "center"
             , style "min-height" "0"
-            , style "margin-bottom" "15px"
+            , style "margin-bottom" "10px"
             ]
             [ viewBigBoard model ]
-        , case mode of
-            WithBot _ ->
-                div []
-                    [ button
+        , div
+            [ style "padding" "10px" ]
+            [ case mode of
+                WithBot _ ->
+                    div []
+                        [ button
+                            [ style "padding" "12px"
+                            , style "font-size" "0.8em"
+                            , style "font-family" "inherit"
+                            , style "background-color"
+                                (if model.board.currentPlayer == X && model.board.winner == Nothing && not model.botThinking then
+                                    Color.primary
+
+                                 else
+                                    Color.disabled
+                                )
+                            , style "color" "white"
+                            , style "border" "none"
+                            , style "border-radius" "10px"
+                            , style "cursor"
+                                (if model.board.currentPlayer == X && model.board.winner == Nothing && not model.botThinking then
+                                    "pointer"
+
+                                 else
+                                    "not-allowed"
+                                )
+                            , style "transition" "all 0.2s ease"
+                            , style "margin-bottom" "10px"
+                            , style "width" "100%"
+                            , onClick PlayForMe
+                            ]
+                            [ text t.playForMe ]
+                        , if model.showAbandonConfirm then
+                            div
+                                [ style "display" "flex"
+                                , style "gap" "10px"
+                                , style "margin-bottom" "10px"
+                                ]
+                                [ button
+                                    [ style "flex" "1"
+                                    , style "padding" "12px"
+                                    , style "font-size" "0.8em"
+                                    , style "font-family" "inherit"
+                                    , style "background-color" Color.danger
+                                    , style "color" "white"
+                                    , style "border" "none"
+                                    , style "border-radius" "10px"
+                                    , style "cursor" "pointer"
+                                    , style "transition" "all 0.2s ease"
+                                    , onClick ConfirmAbandon
+                                    ]
+                                    [ text t.confirmAbandon ]
+                                , button
+                                    [ style "flex" "1"
+                                    , style "padding" "12px"
+                                    , style "font-size" "0.8em"
+                                    , style "font-family" "inherit"
+                                    , style "background-color" Color.primary
+                                    , style "color" "white"
+                                    , style "border" "none"
+                                    , style "border-radius" "10px"
+                                    , style "cursor" "pointer"
+                                    , style "transition" "all 0.2s ease"
+                                    , onClick HideAbandonConfirm
+                                    ]
+                                    [ text t.cancelAbandon ]
+                                ]
+
+                          else
+                            button
+                                [ style "padding" "12px"
+                                , style "font-size" "0.8em"
+                                , style "font-family" "inherit"
+                                , style "background-color" Color.danger
+                                , style "color" "white"
+                                , style "border" "none"
+                                , style "border-radius" "10px"
+                                , style "cursor" "pointer"
+                                , style "transition" "all 0.2s ease"
+                                , style "margin-bottom" "10px"
+                                , style "width" "100%"
+                                , onClick ShowAbandonConfirm
+                                ]
+                                [ text t.abandon ]
+                        ]
+
+                OnlineGame ->
+                    if model.onlineOpponent /= Nothing then
+                        if model.showAbandonConfirm then
+                            div
+                                [ style "display" "flex"
+                                , style "gap" "10px"
+                                , style "margin-bottom" "10px"
+                                ]
+                                [ button
+                                    [ style "flex" "1"
+                                    , style "padding" "12px"
+                                    , style "font-size" "0.8em"
+                                    , style "font-family" "inherit"
+                                    , style "background-color" Color.danger
+                                    , style "color" "white"
+                                    , style "border" "none"
+                                    , style "border-radius" "10px"
+                                    , style "cursor" "pointer"
+                                    , style "transition" "all 0.2s ease"
+                                    , onClick ConfirmAbandon
+                                    ]
+                                    [ text t.confirmAbandon ]
+                                , button
+                                    [ style "flex" "1"
+                                    , style "padding" "12px"
+                                    , style "font-size" "0.8em"
+                                    , style "font-family" "inherit"
+                                    , style "background-color" Color.primary
+                                    , style "color" "white"
+                                    , style "border" "none"
+                                    , style "border-radius" "10px"
+                                    , style "cursor" "pointer"
+                                    , style "transition" "all 0.2s ease"
+                                    , onClick HideAbandonConfirm
+                                    ]
+                                    [ text t.cancelAbandon ]
+                                ]
+
+                        else
+                            button
+                                [ style "padding" "12px"
+                                , style "font-size" "0.8em"
+                                , style "font-family" "inherit"
+                                , style "background-color" Color.danger
+                                , style "color" "white"
+                                , style "border" "none"
+                                , style "border-radius" "10px"
+                                , style "cursor" "pointer"
+                                , style "transition" "all 0.2s ease"
+                                , style "margin-bottom" "10px"
+                                , style "width" "100%"
+                                , onClick ShowAbandonConfirm
+                                ]
+                                [ text t.abandon ]
+
+                    else
+                        text ""
+
+                WithFriend ->
+                    button
                         [ style "padding" "12px"
                         , style "font-size" "0.8em"
                         , style "font-family" "inherit"
-                        , style "background-color"
-                            (if model.board.currentPlayer == X && model.board.winner == Nothing && not model.botThinking then
-                                Color.primary
-
-                             else
-                                Color.disabled
-                            )
+                        , style "background-color" Color.danger
                         , style "color" "white"
                         , style "border" "none"
                         , style "border-radius" "10px"
-                        , style "cursor"
-                            (if model.board.currentPlayer == X && model.board.winner == Nothing && not model.botThinking then
-                                "pointer"
-
-                             else
-                                "not-allowed"
-                            )
+                        , style "cursor" "pointer"
                         , style "transition" "all 0.2s ease"
                         , style "margin-bottom" "10px"
                         , style "width" "100%"
-                        , onClick PlayForMe
+                        , onClick ReturnToMenu
                         ]
-                        [ text t.playForMe ]
-                    , if model.showAbandonConfirm then
-                        div
-                            [ style "display" "flex"
-                            , style "gap" "10px"
-                            , style "margin-bottom" "10px"
-                            ]
-                            [ button
-                                [ style "flex" "1"
-                                , style "padding" "12px"
-                                , style "font-size" "0.8em"
-                                , style "font-family" "inherit"
-                                , style "background-color" Color.danger
-                                , style "color" "white"
-                                , style "border" "none"
-                                , style "border-radius" "10px"
-                                , style "cursor" "pointer"
-                                , style "transition" "all 0.2s ease"
-                                , onClick ConfirmAbandon
-                                ]
-                                [ text t.confirmAbandon ]
-                            , button
-                                [ style "flex" "1"
-                                , style "padding" "12px"
-                                , style "font-size" "0.8em"
-                                , style "font-family" "inherit"
-                                , style "background-color" Color.primary
-                                , style "color" "white"
-                                , style "border" "none"
-                                , style "border-radius" "10px"
-                                , style "cursor" "pointer"
-                                , style "transition" "all 0.2s ease"
-                                , onClick HideAbandonConfirm
-                                ]
-                                [ text t.cancelAbandon ]
-                            ]
+                        [ text t.backToMenu ]
+            , div
+                [ style "display" "flex"
+                , style "gap" "10px"
+                ]
+                [ button
+                    [ style "flex" "1"
+                    , style "padding" "8px"
+                    , style "font-size" "1.2em"
+                    , style "background-color"
+                        (if model.currentMoveIndex >= 0 then
+                            Color.primary
 
-                      else
-                        button
-                            [ style "padding" "12px"
-                            , style "font-size" "0.8em"
-                            , style "font-family" "inherit"
-                            , style "background-color" Color.danger
-                            , style "color" "white"
-                            , style "border" "none"
-                            , style "border-radius" "10px"
-                            , style "cursor" "pointer"
-                            , style "transition" "all 0.2s ease"
-                            , style "margin-bottom" "10px"
-                            , style "width" "100%"
-                            , onClick ShowAbandonConfirm
-                            ]
-                            [ text t.abandon ]
-                    ]
-
-            OnlineGame ->
-                if model.onlineOpponent /= Nothing then
-                    if model.showAbandonConfirm then
-                        div
-                            [ style "display" "flex"
-                            , style "gap" "10px"
-                            , style "margin-bottom" "10px"
-                            ]
-                            [ button
-                                [ style "flex" "1"
-                                , style "padding" "12px"
-                                , style "font-size" "0.8em"
-                                , style "font-family" "inherit"
-                                , style "background-color" Color.danger
-                                , style "color" "white"
-                                , style "border" "none"
-                                , style "border-radius" "10px"
-                                , style "cursor" "pointer"
-                                , style "transition" "all 0.2s ease"
-                                , onClick ConfirmAbandon
-                                ]
-                                [ text t.confirmAbandon ]
-                            , button
-                                [ style "flex" "1"
-                                , style "padding" "12px"
-                                , style "font-size" "0.8em"
-                                , style "font-family" "inherit"
-                                , style "background-color" Color.primary
-                                , style "color" "white"
-                                , style "border" "none"
-                                , style "border-radius" "10px"
-                                , style "cursor" "pointer"
-                                , style "transition" "all 0.2s ease"
-                                , onClick HideAbandonConfirm
-                                ]
-                                [ text t.cancelAbandon ]
-                            ]
-
-                    else
-                        button
-                            [ style "padding" "12px"
-                            , style "font-size" "0.8em"
-                            , style "font-family" "inherit"
-                            , style "background-color" Color.danger
-                            , style "color" "white"
-                            , style "border" "none"
-                            , style "border-radius" "10px"
-                            , style "cursor" "pointer"
-                            , style "transition" "all 0.2s ease"
-                            , style "margin-bottom" "10px"
-                            , style "width" "100%"
-                            , onClick ShowAbandonConfirm
-                            ]
-                            [ text t.abandon ]
-
-                else
-                    text ""
-
-            WithFriend ->
-                button
-                    [ style "padding" "12px"
-                    , style "font-size" "0.8em"
-                    , style "font-family" "inherit"
-                    , style "background-color" Color.danger
+                         else
+                            Color.disabled
+                        )
                     , style "color" "white"
                     , style "border" "none"
-                    , style "border-radius" "10px"
-                    , style "cursor" "pointer"
-                    , style "transition" "all 0.2s ease"
-                    , style "margin-bottom" "10px"
-                    , onClick ReturnToMenu
+                    , style "border-radius" "6px"
+                    , style "cursor"
+                        (if model.currentMoveIndex >= 0 then
+                            "pointer"
+
+                         else
+                            "not-allowed"
+                        )
+                    , style "display" "flex"
+                    , style "align-items" "center"
+                    , style "justify-content" "center"
+                    , onClick UndoMove
                     ]
-                    [ text t.backToMenu ]
-        , div
-            [ style "display" "flex"
-            , style "gap" "10px"
-            ]
-            [ button
-                [ style "flex" "1"
-                , style "padding" "8px"
-                , style "font-size" "1.2em"
-                , style "background-color"
-                    (if model.currentMoveIndex >= 0 then
-                        Color.primary
+                    [ text "↩" ]
+                , button
+                    [ style "flex" "1"
+                    , style "padding" "8px"
+                    , style "font-size" "1.2em"
+                    , style "background-color"
+                        (if model.currentMoveIndex < List.length model.moveHistory - 1 then
+                            Color.primary
 
-                     else
-                        Color.disabled
-                    )
-                , style "color" "white"
-                , style "border" "none"
-                , style "border-radius" "6px"
-                , style "cursor"
-                    (if model.currentMoveIndex >= 0 then
-                        "pointer"
+                         else
+                            Color.disabled
+                        )
+                    , style "color" "white"
+                    , style "border" "none"
+                    , style "border-radius" "6px"
+                    , style "cursor"
+                        (if model.currentMoveIndex < List.length model.moveHistory - 1 then
+                            "pointer"
 
-                     else
-                        "not-allowed"
-                    )
-                , style "display" "flex"
-                , style "align-items" "center"
-                , style "justify-content" "center"
-                , onClick UndoMove
+                         else
+                            "not-allowed"
+                        )
+                    , style "display" "flex"
+                    , style "align-items" "center"
+                    , style "justify-content" "center"
+                    , onClick RedoMove
+                    ]
+                    [ text "↪" ]
                 ]
-                [ text "↩" ]
-            , button
-                [ style "flex" "1"
-                , style "padding" "8px"
-                , style "font-size" "1.2em"
-                , style "background-color"
-                    (if model.currentMoveIndex < List.length model.moveHistory - 1 then
-                        Color.primary
-
-                     else
-                        Color.disabled
-                    )
-                , style "color" "white"
-                , style "border" "none"
-                , style "border-radius" "6px"
-                , style "cursor"
-                    (if model.currentMoveIndex < List.length model.moveHistory - 1 then
-                        "pointer"
-
-                     else
-                        "not-allowed"
-                    )
-                , style "display" "flex"
-                , style "align-items" "center"
-                , style "justify-content" "center"
-                , onClick RedoMove
-                ]
-                [ text "↪" ]
             ]
         ]
 
@@ -2062,6 +2066,7 @@ viewBotDifficultyMenu model =
             ]
             [ text t.back ]
         ]
+
 
 
 viewDifficultyButton : FrontendModel -> String -> BotDifficulty -> Html FrontendMsg
@@ -2336,7 +2341,7 @@ viewBigBoard model =
             [ style "display" "grid"
             , style "grid-template-columns" "repeat(3, 1fr)"
             , style "gap" "4px"
-            , style "width" "min(70vh, 100%)"
+            , style "width" "100%"
             , style "aspect-ratio" "1/1"
             , style "margin" "0 auto"
             , style "padding" "4px"
@@ -2523,6 +2528,7 @@ viewSmallBoard model boardIndex smallBoardData =
             ++ opacity
         )
         cellElements
+
 
 
 viewCell : FrontendModel -> Int -> Bool -> List (Html.Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
@@ -2865,6 +2871,43 @@ viewRulesModal model =
         ]
 
 
+shouldEnableNextButton : FrontendModel -> Bool
+shouldEnableNextButton model =
+    case model.tutorialState of
+        Just step ->
+            case step of
+                TutorialIntro ->
+                    True
+
+                TutorialBasicMove ->
+                    let
+                        centerBoard =
+                            List.getAt 4 model.board.boards
+                                |> Maybe.withDefault emptySmallBoard
+                    in
+                    List.getAt 2 centerBoard.cells == Just (Filled X)
+
+                TutorialBoardSelection ->
+                    True
+
+                TutorialWinningSmall ->
+                    let
+                        centerBoard =
+                            List.getAt 4 model.board.boards
+                                |> Maybe.withDefault emptySmallBoard
+                    in
+                    centerBoard.winner == Just X
+
+                TutorialFreeChoice ->
+                    True
+
+                TutorialWinningBig ->
+                    model.board.winner == Just X
+
+        Nothing ->
+            False
+
+
 viewTutorialOverlay : FrontendModel -> Html FrontendMsg
 viewTutorialOverlay model =
     case model.tutorialState of
@@ -2924,6 +2967,51 @@ viewTutorialOverlay model =
                             [ style "bottom" "20px"
                             , style "transform" "translateX(-50%)"
                             ]
+
+                isNextEnabled =
+                    shouldEnableNextButton model
+
+                buttons =
+                    if isNextEnabled then
+                        [ button
+                            [ style "padding" "10px 20px"
+                            , style "font-size" "0.9em"
+                            , style "background-color" Color.primary
+                            , style "color" "white"
+                            , style "border" "none"
+                            , style "border-radius" "6px"
+                            , style "cursor" "pointer"
+                            , style "transition" "all 0.2s ease"
+                            , onClick SkipTutorial
+                            ]
+                            [ text t.skipTutorial ]
+                        , button
+                            [ style "padding" "10px 20px"
+                            , style "font-size" "0.9em"
+                            , style "background-color" Color.primary
+                            , style "color" "white"
+                            , style "border" "none"
+                            , style "border-radius" "6px"
+                            , style "cursor" "pointer"
+                            , style "transition" "all 0.2s ease"
+                            , onClick NextTutorialStep
+                            ]
+                            [ text t.nextStep ]
+                        ]
+                    else
+                        [ button
+                            [ style "padding" "10px 20px"
+                            , style "font-size" "0.9em"
+                            , style "background-color" Color.primary
+                            , style "color" "white"
+                            , style "border" "none"
+                            , style "border-radius" "6px"
+                            , style "cursor" "pointer"
+                            , style "transition" "all 0.2s ease"
+                            , onClick SkipTutorial
+                            ]
+                            [ text t.skipTutorial ]
+                        ]
             in
             div
                 ([ style "position" "fixed"
@@ -2958,31 +3046,7 @@ viewTutorialOverlay model =
                     , style "gap" "10px"
                     , style "justify-content" "center"
                     ]
-                    [ button
-                        [ style "padding" "10px 20px"
-                        , style "font-size" "0.9em"
-                        , style "background-color" Color.primary
-                        , style "color" "white"
-                        , style "border" "none"
-                        , style "border-radius" "6px"
-                        , style "cursor" "pointer"
-                        , style "transition" "all 0.2s ease"
-                        , onClick SkipTutorial
-                        ]
-                        [ text t.skipTutorial ]
-                    , button
-                        [ style "padding" "10px 20px"
-                        , style "font-size" "0.9em"
-                        , style "background-color" Color.primary
-                        , style "color" "white"
-                        , style "border" "none"
-                        , style "border-radius" "6px"
-                        , style "cursor" "pointer"
-                        , style "transition" "all 0.2s ease"
-                        , onClick NextTutorialStep
-                        ]
-                        [ text t.nextStep ]
-                    ]
+                    buttons
                 ]
 
         _ ->
