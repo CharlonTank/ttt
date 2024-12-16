@@ -6,8 +6,9 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
 import Svg exposing (circle, line, svg)
 import Svg.Attributes
-import Types exposing (..)
 import Tutorial.Types exposing (TutorialStep(..))
+import Types exposing (..)
+
 
 viewTutorialCell : FrontendModel -> Int -> Int -> List (Html.Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
 viewTutorialCell model boardIndex isClickableIndex cellStyles cellIndex cellState =
@@ -43,10 +44,12 @@ viewTutorialCell model boardIndex isClickableIndex cellStyles cellIndex cellStat
                     ( Html.text ""
                     , if model.darkMode then
                         Color.darkText
+
                       else
                         Color.lightText
                     , if model.darkMode then
                         Color.darkBackground
+
                       else
                         Color.lightBackground
                     )
@@ -84,6 +87,7 @@ viewTutorialCell model boardIndex isClickableIndex cellStyles cellIndex cellStat
                     , Color.danger
                     , if model.darkMode then
                         Color.darkBackground
+
                       else
                         Color.lightBackground
                     )
@@ -113,6 +117,7 @@ viewTutorialCell model boardIndex isClickableIndex cellStyles cellIndex cellStat
                     , Color.primary
                     , if model.darkMode then
                         Color.darkBackground
+
                       else
                         Color.lightBackground
                     )
@@ -123,6 +128,7 @@ viewTutorialCell model boardIndex isClickableIndex cellStyles cellIndex cellStat
         cursor =
             if isCellClickable then
                 "pointer"
+
             else
                 "default"
 
@@ -130,12 +136,16 @@ viewTutorialCell model boardIndex isClickableIndex cellStyles cellIndex cellStat
             case cellIndex of
                 0 ->
                     [ style "border-top-left-radius" "4px" ]
+
                 2 ->
                     [ style "border-top-right-radius" "4px" ]
+
                 6 ->
                     [ style "border-bottom-left-radius" "4px" ]
+
                 8 ->
                     [ style "border-bottom-right-radius" "4px" ]
+
                 _ ->
                     []
 
@@ -144,6 +154,7 @@ viewTutorialCell model boardIndex isClickableIndex cellStyles cellIndex cellStat
                 [ style "box-shadow" "inset 0 0 0 2px #4CAF50"
                 , style "animation" "blink 1s ease-in-out infinite"
                 ]
+
             else
                 []
     in
@@ -164,8 +175,9 @@ viewTutorialCell model boardIndex isClickableIndex cellStyles cellIndex cellStat
             ++ highlight
             ++ (if isCellClickable then
                     [ onClick (CellClicked boardIndex cellIndex) ]
+
                 else
                     []
                )
         )
-        [ symbol ] 
+        [ symbol ]

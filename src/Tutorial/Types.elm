@@ -7,4 +7,4 @@ type TutorialStep
     | TutorialBoardSelection
     | TutorialWinningSmall
     | TutorialFreeChoice
-    | TutorialWinningBig 
+    | TutorialWinningBig

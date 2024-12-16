@@ -158,9 +158,6 @@ type FrontendMsg
     | ReceivedLocalStorageValue String String
     | ToggleRulesModal
     | StartOnlineGame
-    | ReceivedGameFound { opponentId : ClientId, playerRole : Player }
-    | ReceivedOpponentMove Move
-    | ReceivedOpponentLeft
     | StartWithRandomPlayer
     | GotTime Time.Posix
     | Tick Time.Posix

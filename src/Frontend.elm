@@ -29,8 +29,6 @@ import Types exposing (..)
 import Url
 
 
-
-
 app =
     Lamdera.frontend
         { init = init
@@ -116,14 +114,12 @@ update msg model =
 
         CellClicked boardIndex cellIndex ->
             if model.currentMoveIndex < List.length model.moveHistory - 1 then
-                -- We're viewing history, don't allow moves
                 ( model, Cmd.none )
 
             else
                 case model.route of
                     Game (WithBot difficulty) ->
                         if model.board.currentPlayer == O then
-                            -- It's bot's turn, don't allow player to move
                             ( model, Cmd.none )
 
                         else
@@ -132,10 +128,10 @@ update msg model =
                                     handlePlayerMove model boardIndex cellIndex
                             in
                             if updatedModel.board.winner == Nothing then
-                                -- Schedule bot's move and show thinking state
                                 ( { updatedModel | botThinking = True }
                                 , Cmd.batch [ cmd, Task.perform (always BotMove) (Process.sleep 500) ]
                                 )
+
                             else
                                 ( updatedModel, cmd )
 
@@ -143,33 +139,16 @@ update msg model =
                         handlePlayerMove model boardIndex cellIndex
 
                     Game OnlineGame ->
-                        if model.onlineOpponent == Nothing then
-                            ( model, Cmd.none )
-
-                        else
-                            let
-                                isMyTurn =
-                                    case model.onlinePlayer of
-                                        Just player ->
-                                            player == model.board.currentPlayer
-
-                                        Nothing ->
-                                            False
-                            in
-                            if not isMyTurn then
-                                ( model, Cmd.none )
-
-                            else
-                                let
-                                    ( updatedModel, cmd ) =
+                        model.onlinePlayer
+                            |> Maybe.map
+                                (\player ->
+                                    if player == model.board.currentPlayer then
                                         handlePlayerMove model boardIndex cellIndex
-                                in
-                                ( updatedModel
-                                , Cmd.batch
-                                    [ cmd
-                                    , Lamdera.sendToBackend (MakeMove boardIndex cellIndex model.board.currentPlayer)
-                                    ]
+
+                                    else
+                                        ( model, Cmd.none )
                                 )
+                            |> Maybe.withDefault ( model, Cmd.none )
 
                     Home ->
                         ( model, Cmd.none )
@@ -194,19 +173,22 @@ update msg model =
                                                     Just winner ->
                                                         if winner == X then
                                                             Won
+
                                                         else
                                                             Lost
+
                                                     Nothing ->
                                                         if isBigBoardComplete modelAfterMove.board then
                                                             Drew
+
                                                         else
                                                             Ongoing
                                         in
-                                        ( { modelAfterMove 
-                                          | botThinking = False
-                                          , gameResult = newGameResult 
+                                        ( { modelAfterMove
+                                            | botThinking = False
+                                            , gameResult = newGameResult
                                           }
-                                        , moveCmd 
+                                        , moveCmd
                                         )
 
                                     Nothing ->
@@ -277,7 +259,6 @@ update msg model =
             in
             case model.route of
                 Game (WithBot _) ->
-                    -- If we're already in a game, restart with new starting player
                     ( { model
                         | board = newBoard
                         , moveHistory = []
@@ -290,7 +271,6 @@ update msg model =
                     )
 
                 _ ->
-                    -- If we're selecting difficulty, start the game
                     case model.selectedDifficulty of
                         Just difficulty ->
                             ( { model
@@ -337,7 +317,6 @@ update msg model =
                                                 handlePlayerMove model boardIdx cellIdx
                                         in
                                         if modelAfterMove.board.winner == Nothing then
-                                            -- Schedule bot's move and show thinking state
                                             ( { modelAfterMove | botThinking = True }
                                             , Cmd.batch [ moveCmd, Task.perform (always BotMove) (Process.sleep 500) ]
                                             )
@@ -470,7 +449,6 @@ update msg model =
                     newHeight =
                         mouseY - model.debuggerPosition.y
 
-                    -- Minimum size constraints
                     constrainedWidth =
                         Basics.max 200 newWidth
 
@@ -505,72 +483,6 @@ update msg model =
             , Lamdera.sendToBackend JoinMatchmaking
             )
 
-        ReceivedGameFound data ->
-            ( { model
-                | inMatchmaking = False
-                , onlineOpponent = Just data.opponentId
-                , route = Game OnlineGame
-                , board = initialBoard X
-                , onlinePlayer = Just data.playerRole
-                , moveHistory = []
-                , currentMoveIndex = -1
-                , gameResult = Ongoing
-              }
-            , Cmd.none
-            )
-
-        ReceivedOpponentMove move ->
-            let
-                newBoard =
-                    makeMove model.board move.boardIndex move.cellIndex
-
-                -- Create new move record and update history
-                newHistory =
-                    List.take (model.currentMoveIndex + 1) model.moveHistory ++ [ move ]
-
-                newIndex =
-                    List.length newHistory - 1
-
-                -- Determine game result after opponent's move
-                newGameResult =
-                    case newBoard.winner of
-                        Just winner ->
-                            case model.onlinePlayer of
-                                Just myRole ->
-                                    if myRole == winner then
-                                        Won
-
-                                    else
-                                        Lost
-
-                                Nothing ->
-                                    Ongoing
-
-                        Nothing ->
-                            if isBigBoardComplete newBoard then
-                                Drew
-
-                            else
-                                Ongoing
-            in
-            ( { model
-                | board = newBoard
-                , moveHistory = newHistory
-                , currentMoveIndex = newIndex
-                , gameResult = newGameResult
-              }
-            , Cmd.none
-            )
-
-        ReceivedOpponentLeft ->
-            ( { model
-                | onlineOpponent = Nothing
-                , onlinePlayer = Nothing
-                , gameResult = Won
-              }
-            , Cmd.none
-            )
-
         StartWithRandomPlayer ->
             ( model, Task.perform GotTime Time.now )
 
@@ -601,7 +513,6 @@ update msg model =
             in
             case model.route of
                 Game (WithBot _) ->
-                    -- If we're already in a game, restart with new starting player
                     ( { model
                         | board = newBoard
                         , moveHistory = []
@@ -614,7 +525,6 @@ update msg model =
                     )
 
                 _ ->
-                    -- If we're selecting difficulty, start the game
                     case model.selectedDifficulty of
                         Just difficulty ->
                             ( { model
@@ -773,7 +683,7 @@ handlePlayerMove model boardIndex cellIndex =
             }
 
         newBoard =
-            makeMove board boardIndex cellIndex
+            makeMove board boardIndex cellIndex board.currentPlayer
 
         newHistory =
             List.take (model.currentMoveIndex + 1) model.moveHistory ++ [ move ]
@@ -793,10 +703,9 @@ handlePlayerMove model boardIndex cellIndex =
                                 == 4
                                 && cellIndex
                                 == 4
-                                && -- Check if it's the center cell of the center board
-                                   (let
+                                && (let
                                         boardAfterMove =
-                                            makeMove board boardIndex cellIndex
+                                            makeMove board boardIndex cellIndex board.currentPlayer
 
                                         centerBoard =
                                             List.getAt 4 boardAfterMove.boards
@@ -817,10 +726,9 @@ handlePlayerMove model boardIndex cellIndex =
                                 == 8
                                 && cellIndex
                                 == 6
-                                && -- Check if it's the winning move
-                                   (let
+                                && (let
                                         boardAfterMove =
-                                            makeMove board boardIndex cellIndex
+                                            makeMove board boardIndex cellIndex board.currentPlayer
                                     in
                                     boardAfterMove.winner == Just X
                                    )
@@ -865,20 +773,47 @@ handlePlayerMove model boardIndex cellIndex =
                         Just winner ->
                             if winner == X then
                                 Won
+
                             else
                                 Lost
+
                         Nothing ->
                             if isBigBoardComplete newBoard then
                                 Drew
+
                             else
                                 Ongoing
+
+                Game OnlineGame ->
+                    case newBoard.winner of
+                        Just winner ->
+                            case model.onlinePlayer of
+                                Just myRole ->
+                                    if myRole == winner then
+                                        Won
+
+                                    else
+                                        Lost
+
+                                Nothing ->
+                                    Ongoing
+
+                        Nothing ->
+                            if isBigBoardComplete newBoard then
+                                Drew
+
+                            else
+                                Ongoing
+
                 _ ->
                     case model.tutorialState of
                         Just TutorialWinningBig ->
                             if shouldProgressTutorial then
                                 Won
+
                             else
                                 model.gameResult
+
                         _ ->
                             model.gameResult
 
@@ -892,6 +827,7 @@ handlePlayerMove model boardIndex cellIndex =
                         ( Just TutorialWinningBig, Nothing ) ->
                             if shouldProgressTutorial then
                                 Nothing
+
                             else
                                 model.tutorialState
 
@@ -987,12 +923,11 @@ findBestMove board difficulty =
                 (\( boardIdx, cellIdx ) ->
                     let
                         newBoard =
-                            makeMove board boardIdx cellIdx
+                            makeMove board boardIdx cellIdx board.currentPlayer
 
                         baseScore =
                             alphabeta newBoard depthForDifficulty -10000 10000 False
 
-                        -- Add randomness based on difficulty
                         randomFactor =
                             case difficulty of
                                 Easy ->
@@ -1006,32 +941,25 @@ findBestMove board difficulty =
 
                                 Elite ->
                                     modBy 10 (boardIdx * 3 + cellIdx * 2)
-
-                        -- Petit facteur alatoire pour Elite
                     in
                     ( ( boardIdx, cellIdx ), baseScore + randomFactor )
                 )
                 availableMoves
 
-        -- For Easy and Medium, sometimes choose a random move
         shouldChooseRandom =
             case difficulty of
                 Easy ->
                     modBy 3 (List.length availableMoves) == 0
 
-                -- 33% chance
                 Medium ->
                     modBy 5 (List.length availableMoves) == 0
 
-                -- 20% chance
                 Hard ->
                     modBy 10 (List.length availableMoves) == 0
 
-                -- 10% chance
                 Elite ->
                     modBy 20 (List.length availableMoves) == 0
 
-        -- 5% chance
         bestMove =
             if shouldChooseRandom then
                 List.getAt (modBy (List.length availableMoves) (List.length moveScores)) availableMoves
@@ -1051,12 +979,10 @@ alphabeta board depth alpha beta isMaximizing =
         Just winner ->
             if winner == O then
                 1000 + depth
-                -- Bot wins (O)
 
             else
                 -1000 - depth
 
-        -- Player wins (X)
         Nothing ->
             if depth == 0 then
                 evaluatePosition board O
@@ -1082,7 +1008,7 @@ alphabetaMax board depth alpha beta =
                 ( boardIdx, cellIdx ) :: rest ->
                     let
                         newBoard =
-                            makeMove board boardIdx cellIdx
+                            makeMove board boardIdx cellIdx board.currentPlayer
 
                         score =
                             alphabeta newBoard (depth - 1) currentAlpha beta False
@@ -1094,7 +1020,6 @@ alphabetaMax board depth alpha beta =
                             Basics.max currentAlpha newBestScore
                     in
                     if beta <= newAlpha then
-                        -- Beta cutoff
                         newBestScore
 
                     else
@@ -1117,7 +1042,7 @@ alphabetaMin board depth alpha beta =
                 ( boardIdx, cellIdx ) :: rest ->
                     let
                         newBoard =
-                            makeMove board boardIdx cellIdx
+                            makeMove board boardIdx cellIdx board.currentPlayer
 
                         score =
                             alphabeta newBoard (depth - 1) alpha currentBeta True
@@ -1129,7 +1054,6 @@ alphabetaMin board depth alpha beta =
                             Basics.min currentBeta newBestScore
                     in
                     if newBeta <= alpha then
-                        -- Alpha cutoff
                         newBestScore
 
                     else
@@ -1170,27 +1094,21 @@ evaluatePosition board forPlayer =
                     in
                     if playerCount == 3 then
                         100
-                        -- Winning line
 
                     else if opponentCount == 3 then
                         -100
-                        -- Opponent winning line
 
                     else if playerCount == 2 && emptyCount == 1 then
                         20
-                        -- Two in a row with potential
 
                     else if opponentCount == 2 && emptyCount == 1 then
                         -20
-                        -- Block opponent's potential win
 
                     else if playerCount == 1 && emptyCount == 2 then
                         2
-                        -- One with potential
 
                     else if opponentCount == 1 && emptyCount == 2 then
                         -2
-                        -- Opponent one with potential
 
                     else
                         0
@@ -1220,7 +1138,6 @@ evaluatePosition board forPlayer =
         boardScores =
             List.map evaluateSmallBoard board.boards
 
-        -- Add bonus for center board control
         centerBoardBonus =
             case List.getAt 4 board.boards of
                 Just centerBoard ->
@@ -1228,7 +1145,6 @@ evaluatePosition board forPlayer =
                         Just winner ->
                             if winner == forPlayer then
                                 200
-                                -- Increased importance of center
 
                             else
                                 -200
@@ -1252,7 +1168,6 @@ evaluatePosition board forPlayer =
                 Nothing ->
                     0
 
-        -- Add bonus for corner boards control
         cornerBoardsBonus =
             let
                 cornerIndexes =
@@ -1266,7 +1181,6 @@ evaluatePosition board forPlayer =
                         Just winner ->
                             if winner == forPlayer then
                                 100
-                                -- Increased importance of corners
 
                             else
                                 -100
@@ -1276,22 +1190,18 @@ evaluatePosition board forPlayer =
             in
             List.sum (List.map cornerScore cornerBoards)
 
-        -- Add bonus for strategic moves that send opponent to unfavorable boards
         strategicBonus =
             case board.activeBoard of
                 Just nextBoardIndex ->
                     if nextBoardIndex == 4 then
                         -50
-                        -- Penalize sending opponent to center
 
                     else if List.member nextBoardIndex [ 0, 2, 6, 8 ] then
                         -30
-                        -- Penalize sending opponent to corners
 
                     else
                         20
 
-                -- Bonus for sending opponent to less strategic boards
                 Nothing ->
                     0
     in
@@ -1338,14 +1248,14 @@ isValidMove board boardIndex cellIndex =
             targetBoard.winner == Nothing && targetCell == Empty
 
 
-makeMove : BigBoard -> Int -> Int -> BigBoard
-makeMove board boardIndex cellIndex =
+makeMove : BigBoard -> Int -> Int -> Player -> BigBoard
+makeMove board boardIndex cellIndex player =
     let
         updateCell cells index =
             List.indexedMap
                 (\i cell ->
                     if i == index then
-                        Filled board.currentPlayer
+                        Filled player
 
                     else
                         cell
@@ -1374,14 +1284,13 @@ makeMove board boardIndex cellIndex =
             updateBoard board.boards boardIndex
 
         nextPlayer =
-            case board.currentPlayer of
+            case player of
                 X ->
                     O
 
                 O ->
                     X
 
-        -- The next active board is determined by the cell that was just played
         nextActiveBoard =
             if isSmallBoardComplete (List.drop cellIndex updatedBoards |> List.head |> Maybe.withDefault emptySmallBoard) then
                 Nothing
@@ -1440,17 +1349,12 @@ checkBigBoardWinner boards =
             List.map .winner boards
 
         winningCombinations =
-            [ -- Rows
-              [ 0, 1, 2 ]
+            [ [ 0, 1, 2 ]
             , [ 3, 4, 5 ]
             , [ 6, 7, 8 ]
-
-            -- Columns
             , [ 0, 3, 6 ]
             , [ 1, 4, 7 ]
             , [ 2, 5, 8 ]
-
-            -- Diagonals
             , [ 0, 4, 8 ]
             , [ 2, 4, 6 ]
             ]
@@ -1481,13 +1385,68 @@ updateFromBackend msg model =
             ( model, Cmd.none )
 
         GameFound data ->
-            update (ReceivedGameFound data) model
+            ( { model
+                | inMatchmaking = False
+                , onlineOpponent = Just data.opponentId
+                , route = Game OnlineGame
+                , board = initialBoard X
+                , onlinePlayer = Just data.playerRole
+                , moveHistory = []
+                , currentMoveIndex = -1
+                , gameResult = Ongoing
+              }
+            , Cmd.none
+            )
 
         OpponentMove move ->
-            update (ReceivedOpponentMove move) model
+            let
+                newBoard =
+                    makeMove model.board move.boardIndex move.cellIndex move.player
+
+                newHistory =
+                    List.take (model.currentMoveIndex + 1) model.moveHistory ++ [ move ]
+
+                newIndex =
+                    List.length newHistory - 1
+
+                newGameResult =
+                    case newBoard.winner of
+                        Just winner ->
+                            case model.onlinePlayer of
+                                Just myRole ->
+                                    if myRole == winner then
+                                        Won
+
+                                    else
+                                        Lost
+
+                                Nothing ->
+                                    Ongoing
+
+                        Nothing ->
+                            if isBigBoardComplete newBoard then
+                                Drew
+
+                            else
+                                Ongoing
+            in
+            ( { model
+                | board = newBoard
+                , moveHistory = newHistory
+                , currentMoveIndex = newIndex
+                , gameResult = newGameResult
+              }
+            , Cmd.none
+            )
 
         OpponentLeft ->
-            update ReceivedOpponentLeft model
+            ( { model
+                | onlineOpponent = Nothing
+                , onlinePlayer = Nothing
+                , gameResult = Won
+              }
+            , Cmd.none
+            )
 
 
 view : FrontendModel -> Browser.Document FrontendMsg
@@ -1880,6 +1839,64 @@ viewGame model mode =
                             [ text t.abandon ]
                     ]
 
+            OnlineGame ->
+                if model.onlineOpponent /= Nothing then
+                    if model.showAbandonConfirm then
+                        div
+                            [ style "display" "flex"
+                            , style "gap" "10px"
+                            , style "margin-bottom" "10px"
+                            ]
+                            [ button
+                                [ style "flex" "1"
+                                , style "padding" "12px"
+                                , style "font-size" "0.8em"
+                                , style "font-family" "inherit"
+                                , style "background-color" Color.danger
+                                , style "color" "white"
+                                , style "border" "none"
+                                , style "border-radius" "10px"
+                                , style "cursor" "pointer"
+                                , style "transition" "all 0.2s ease"
+                                , onClick ConfirmAbandon
+                                ]
+                                [ text t.confirmAbandon ]
+                            , button
+                                [ style "flex" "1"
+                                , style "padding" "12px"
+                                , style "font-size" "0.8em"
+                                , style "font-family" "inherit"
+                                , style "background-color" Color.primary
+                                , style "color" "white"
+                                , style "border" "none"
+                                , style "border-radius" "10px"
+                                , style "cursor" "pointer"
+                                , style "transition" "all 0.2s ease"
+                                , onClick HideAbandonConfirm
+                                ]
+                                [ text t.cancelAbandon ]
+                            ]
+
+                    else
+                        button
+                            [ style "padding" "12px"
+                            , style "font-size" "0.8em"
+                            , style "font-family" "inherit"
+                            , style "background-color" Color.danger
+                            , style "color" "white"
+                            , style "border" "none"
+                            , style "border-radius" "10px"
+                            , style "cursor" "pointer"
+                            , style "transition" "all 0.2s ease"
+                            , style "margin-bottom" "10px"
+                            , style "width" "100%"
+                            , onClick ShowAbandonConfirm
+                            ]
+                            [ text t.abandon ]
+
+                else
+                    text ""
+
             WithFriend ->
                 button
                     [ style "padding" "12px"
@@ -1895,9 +1912,6 @@ viewGame model mode =
                     , onClick ReturnToMenu
                     ]
                     [ text t.backToMenu ]
-
-            _ ->
-                text ""
         , div
             [ style "display" "flex"
             , style "gap" "10px"
@@ -2401,15 +2415,12 @@ viewSmallBoard model boardIndex smallBoardData =
                 Just TutorialBoardSelection ->
                     True
 
-                -- On montre tous les plateaux
                 Just TutorialWinningSmall ->
                     boardIndex == 4
 
-                -- Only highlight the center board
                 Just TutorialWinningBig ->
                     boardIndex == 8
 
-                -- Only highlight bottom-right board
                 _ ->
                     True
 
@@ -2422,15 +2433,12 @@ viewSmallBoard model boardIndex smallBoardData =
                         Just TutorialBoardSelection ->
                             False
 
-                        -- Désactive les clics pendant l'étape 3
                         Just TutorialWinningSmall ->
                             boardIndex == 4
 
-                        -- Permet de cliquer dans le morpion central
                         Just TutorialFreeChoice ->
                             False
 
-                        -- Désactive les clics car c'est au tour de O
                         _ ->
                             isTutorialBoard
                    )
@@ -2440,7 +2448,6 @@ viewSmallBoard model boardIndex smallBoardData =
                 Just TutorialBoardSelection ->
                     if boardIndex == 2 then
                         Color.success
-                        -- Met en vidence le plateau en haut à droite
 
                     else
                         Color.getBorder model.darkMode
@@ -2518,15 +2525,21 @@ viewSmallBoard model boardIndex smallBoardData =
         cellElements
 
 
-
-
-
-
 viewCell : FrontendModel -> Int -> Bool -> List (Html.Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
 viewCell model boardIndex isClickable cellStyles cellIndex cellState =
     case model.tutorialState of
         Just _ ->
-            Tutorial.View.viewTutorialCell model boardIndex (if isClickable then 1 else 0) cellStyles cellIndex cellState
+            Tutorial.View.viewTutorialCell model
+                boardIndex
+                (if isClickable then
+                    1
+
+                 else
+                    0
+                )
+                cellStyles
+                cellIndex
+                cellState
 
         Nothing ->
             let
@@ -2536,10 +2549,12 @@ viewCell model boardIndex isClickable cellStyles cellIndex cellState =
                             ( Html.text ""
                             , if model.darkMode then
                                 Color.darkText
+
                               else
                                 Color.lightText
                             , if model.darkMode then
                                 Color.darkBackground
+
                               else
                                 Color.lightBackground
                             )
@@ -2577,6 +2592,7 @@ viewCell model boardIndex isClickable cellStyles cellIndex cellState =
                             , Color.danger
                             , if model.darkMode then
                                 Color.darkBackground
+
                               else
                                 Color.lightBackground
                             )
@@ -2606,6 +2622,7 @@ viewCell model boardIndex isClickable cellStyles cellIndex cellState =
                             , Color.primary
                             , if model.darkMode then
                                 Color.darkBackground
+
                               else
                                 Color.lightBackground
                             )
@@ -2616,6 +2633,7 @@ viewCell model boardIndex isClickable cellStyles cellIndex cellState =
                 cursor =
                     if isCellClickable then
                         "pointer"
+
                     else
                         "default"
 
@@ -2623,12 +2641,16 @@ viewCell model boardIndex isClickable cellStyles cellIndex cellState =
                     case cellIndex of
                         0 ->
                             [ style "border-top-left-radius" "4px" ]
+
                         2 ->
                             [ style "border-top-right-radius" "4px" ]
+
                         6 ->
                             [ style "border-bottom-left-radius" "4px" ]
+
                         8 ->
                             [ style "border-bottom-right-radius" "4px" ]
+
                         _ ->
                             []
             in
@@ -2648,13 +2670,12 @@ viewCell model boardIndex isClickable cellStyles cellIndex cellState =
                     ++ cellStyles
                     ++ (if isCellClickable then
                             [ onClick (CellClicked boardIndex cellIndex) ]
+
                         else
                             []
                        )
                 )
                 [ symbol ]
-
-
 
 
 subscriptions : FrontendModel -> Sub FrontendMsg
@@ -2695,7 +2716,6 @@ subscriptions model =
           else
             Sub.none
         ]
-
 
 
 storeLocalStorage : { key : String, value : String } -> Cmd msg
@@ -2762,7 +2782,7 @@ reconstructBoardFromMoves moves upToIndex initialBoardState =
     in
     List.foldl
         (\move board ->
-            makeMove board move.boardIndex move.cellIndex
+            makeMove board move.boardIndex move.cellIndex board.currentPlayer
         )
         freshBoard
         movesToApply
@@ -2872,8 +2892,6 @@ viewTutorialOverlay model =
 
                         TutorialFreeChoice ->
                             t.tutorialFreeChoice
-
-                        
 
                 stepNumber =
                     case step of
