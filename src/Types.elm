@@ -82,6 +82,13 @@ type Language
     | EN
 
 
+type GameResult
+    = Won
+    | Lost
+    | Drew
+    | Ongoing
+
+
 type alias FrontendModel =
     { key : Key
     , board : BigBoard
@@ -107,6 +114,7 @@ type alias FrontendModel =
     , onlineOpponent : Maybe ClientId
     , onlinePlayer : Maybe Player
     , showAbandonConfirm : Bool
+    , gameResult : GameResult
     }
 
 
@@ -164,6 +172,7 @@ type ToBackend
     | JoinMatchmaking
     | LeaveMatchmaking
     | MakeMove Int Int Player
+    | AbandonGame
 
 
 type BackendMsg

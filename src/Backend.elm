@@ -98,6 +98,39 @@ updateFromFrontend sessionId clientId msg model =
             , Cmd.none
             )
             
+        AbandonGame ->
+            let
+                findGame =
+                    List.filter
+                        (\(player1, player2, _) ->
+                            player1 == clientId || player2 == clientId
+                        )
+                        model.activeGames
+                        |> List.head
+            in
+            case findGame of
+                Just (player1, player2, _) ->
+                    let
+                        opponent =
+                            if player1 == clientId then
+                                player2
+                            else
+                                player1
+                                
+                        updatedGames =
+                            List.filter
+                                (\(p1, p2, _) ->
+                                    not (p1 == player1 && p2 == player2)
+                                )
+                                model.activeGames
+                    in
+                    ( { model | activeGames = updatedGames }
+                    , sendToFrontend opponent OpponentLeft
+                    )
+                
+                Nothing ->
+                    ( model, Cmd.none )
+            
         MakeMove boardIndex cellIndex player ->
             let
                 findGame =

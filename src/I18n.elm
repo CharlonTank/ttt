@@ -37,6 +37,8 @@ type alias Translation =
     , confirmAbandon : String
     , cancelAbandon : String
     , draw : String
+    , youWon : String
+    , youLost : String
     }
 
 
@@ -46,8 +48,8 @@ translations lang =
         FR ->
             { welcome = "Ultimate Tic Tac Toe"
             , description = "Bienvenue dans Ultimate Tic Tac Toe ! Défiez votre réflexion stratégique dans cette version avancée du jeu."
-            , playWithFriend = "Jouer avec un ami"
-            , playWithBot = "Jouer avec le bot"
+            , playWithFriend = "Jouer hors ligne avec un ami"
+            , playWithBot = "Jouer contre l'ordinateur"
             , playOnline = "Jouer en ligne"
             , searching = "Recherche d'un adversaire..."
             , chooseDifficulty = "Choisissez la difficulté"
@@ -58,12 +60,12 @@ translations lang =
             , back = "Retour"
             , backToMenu = "Retour au menu"
             , playingWithFriend = "Mode : Jeu avec un ami"
-            , playingWithBot = \difficulty -> "Mode : Jeu contre le bot (" ++ difficulty ++ ")"
+            , playingWithBot = \difficulty -> "Mode : Jeu contre l'ordinateur (" ++ difficulty ++ ")"
             , playingOnline = "Mode : Jeu en ligne"
             , humanStarts = "Vous commencez"
-            , botStarts = "Le bot commence"
+            , botStarts = "L'ordinateur commence"
             , randomStarts = "🎲"
-            , playForMe = "Jouer à ma place"
+            , playForMe = "Jouer pour moi"
             , playerXTurn = "Tour du joueur X"
             , playerOTurn = "Tour du joueur O"
             , playerWins = \player -> player ++ " gagne !"
@@ -77,6 +79,8 @@ translations lang =
             , confirmAbandon = "Confirmer l'abandon"
             , cancelAbandon = "Annuler"
             , draw = "Match nul !"
+            , youWon = "Vous avez gagné ! 🎉"
+            , youLost = "Vous avez perdu ! 😢"
             }
 
         EN ->
@@ -113,6 +117,8 @@ translations lang =
             , confirmAbandon = "Confirm forfeit"
             , cancelAbandon = "Cancel"
             , draw = "It's a draw!"
+            , youWon = "You won! 🎉"
+            , youLost = "You lost! 😢"
             }
 
 

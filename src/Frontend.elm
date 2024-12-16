@@ -68,6 +68,7 @@ init url key =
       , onlineOpponent = Nothing
       , onlinePlayer = Nothing
       , showAbandonConfirm = False
+      , gameResult = Ongoing
       }
     , Cmd.batch
         [ getLocalStorageValue_ "language"
@@ -210,7 +211,15 @@ update msg model =
             )
 
         StartGameWithFriend ->
-            ( { model | route = Game WithFriend }, Cmd.none )
+            ( { model 
+                | route = Game WithFriend
+                , board = initialBoard X
+                , moveHistory = []
+                , currentMoveIndex = -1
+                , gameResult = Ongoing
+              }
+            , Cmd.none
+            )
 
         StartGameWithBot ->
             ( { model | botDifficultyMenuOpen = True }, Cmd.none )
@@ -249,6 +258,7 @@ update msg model =
                         , currentMoveIndex = -1
                         , humanPlaysFirst = humanStarts
                         , botThinking = not humanStarts
+                        , gameResult = Ongoing
                       }
                     , cmd
                     )
@@ -266,6 +276,7 @@ update msg model =
                                 , selectedDifficulty = Nothing
                                 , humanPlaysFirst = humanStarts
                                 , botThinking = not humanStarts
+                                , gameResult = Ongoing
                               }
                             , cmd
                             )
@@ -274,7 +285,12 @@ update msg model =
                             ( model, Cmd.none )
 
         ReturnToMenu ->
-            ( { model | route = Home }, Cmd.none )
+            ( { model 
+              | route = Home
+              , gameResult = Ongoing
+              }
+            , Cmd.none
+            )
 
         CancelBotDifficulty ->
             ( { model | botDifficultyMenuOpen = False }, Cmd.none )
@@ -470,6 +486,9 @@ update msg model =
               , route = Game OnlineGame
               , board = initialBoard X
               , onlinePlayer = Just data.playerRole
+              , moveHistory = []
+              , currentMoveIndex = -1
+              , gameResult = Ongoing
               }
             , Cmd.none
             )
@@ -485,11 +504,31 @@ update msg model =
 
                 newIndex =
                     List.length newHistory - 1
+
+                -- Determine game result after opponent's move
+                newGameResult =
+                    case newBoard.winner of
+                        Just winner ->
+                            case model.onlinePlayer of
+                                Just myRole ->
+                                    if myRole == winner then
+                                        Won
+                                    else
+                                        Lost
+                                Nothing ->
+                                    Ongoing
+
+                        Nothing ->
+                            if isBigBoardComplete newBoard then
+                                Drew
+                            else
+                                Ongoing
             in
             ( { model 
               | board = newBoard
               , moveHistory = newHistory
               , currentMoveIndex = newIndex
+              , gameResult = newGameResult
               }
             , Cmd.none
             )
@@ -498,7 +537,7 @@ update msg model =
             ( { model 
               | onlineOpponent = Nothing
               , onlinePlayer = Nothing
-              , route = Home
+              , gameResult = Won
               }
             , Cmd.none
             )
@@ -539,6 +578,7 @@ update msg model =
                         , currentMoveIndex = -1
                         , humanPlaysFirst = humanStarts
                         , botThinking = not humanStarts
+                        , gameResult = Ongoing
                       }
                     , cmd
                     )
@@ -556,6 +596,7 @@ update msg model =
                                 , selectedDifficulty = Nothing
                                 , humanPlaysFirst = humanStarts
                                 , botThinking = not humanStarts
+                                , gameResult = Ongoing
                               }
                             , cmd
                             )
@@ -574,15 +615,15 @@ update msg model =
 
         ConfirmAbandon ->
             ( { model 
-              | route = Home
-              , showAbandonConfirm = False
+              | showAbandonConfirm = False
               , onlineOpponent = Nothing
               , onlinePlayer = Nothing
               , board = initialBoard X
               , moveHistory = []
               , currentMoveIndex = -1
+              , gameResult = Lost
               }
-            , Lamdera.sendToBackend LeaveMatchmaking
+            , Lamdera.sendToBackend AbandonGame
             )
 
 
@@ -616,11 +657,40 @@ handlePlayerMove model boardIndex cellIndex =
 
                     newIndex =
                         model.currentMoveIndex + 1
+
+                    -- Determine game result
+                    newGameResult =
+                        case newBoard.winner of
+                            Just winner ->
+                                case model.route of
+                                    Game OnlineGame ->
+                                        case model.onlinePlayer of
+                                            Just myRole ->
+                                                if myRole == winner then
+                                                    Won
+                                                else
+                                                    Lost
+                                            Nothing ->
+                                                Ongoing
+                                    Game (WithBot _) ->
+                                        if winner == X then
+                                            Won
+                                        else
+                                            Lost
+                                    _ ->
+                                        Ongoing
+
+                            Nothing ->
+                                if isBigBoardComplete newBoard then
+                                    Drew
+                                else
+                                    Ongoing
                 in
                 { model
                     | board = newBoard
                     , moveHistory = newHistory
                     , currentMoveIndex = newIndex
+                    , gameResult = newGameResult
                 }
 
             else
@@ -1200,6 +1270,10 @@ view model =
                     50% { opacity: 1; }
                     100% { opacity: 0.8; }
                 }
+                @keyframes slideIn {
+                    0% { transform: translateY(-20px); opacity: 0; }
+                    100% { transform: translateY(0); opacity: 1; }
+                }
             """
             ]
         , div
@@ -1231,6 +1305,11 @@ view model =
                     viewGame model mode
              ]
                 ++ Debugger.view model
+                ++ [ if model.gameResult /= Ongoing then
+                        viewGameResultModal model
+                     else
+                        text ""
+                   ]
             )
         ]
     }
@@ -1465,6 +1544,7 @@ viewGame model mode =
                             "not-allowed"
                         )
                     , style "transition" "all 0.2s ease"
+                    , style "margin-bottom" "10px"
                     , onClick PlayForMe
                     ]
                     [ text t.playForMe ]
@@ -1739,37 +1819,59 @@ viewStatus model =
             , style "gap" "10px"
             ]
             [ text <|
-                case model.board.winner of
-                    Just player ->
-                        t.playerWins (I18n.playerToString model.language player)
+                case model.gameResult of
+                    Won ->
+                        t.youWon
 
-                    Nothing ->
-                        if isBigBoardComplete model.board then
-                            t.draw
-                        else
-                            case model.route of
-                                Game (WithBot _) ->
-                                    if model.board.currentPlayer == O then
-                                        "🤖"
-                                    else
-                                        "C'est votre tour"
-                                    
-                                Game OnlineGame ->
-                                    case model.onlinePlayer of
-                                        Just player ->
-                                            if model.onlineOpponent == Nothing then
-                                                t.waitingForOpponent
-                                            else if player == model.board.currentPlayer then
-                                                t.yourTurn
+                    Lost ->
+                        t.youLost
+
+                    Drew ->
+                        t.draw
+
+                    Ongoing ->
+                        case model.board.winner of
+                            Just player ->
+                                case model.route of
+                                    Game OnlineGame ->
+                                        case model.onlinePlayer of
+                                            Just myRole ->
+                                                if myRole == player then
+                                                    t.youWon
+                                                else
+                                                    t.youLost
+                                            Nothing ->
+                                                t.playerWins (I18n.playerToString model.language player)
+                                    _ ->
+                                        t.playerWins (I18n.playerToString model.language player)
+
+                            Nothing ->
+                                if isBigBoardComplete model.board then
+                                    t.draw
+                                else
+                                    case model.route of
+                                        Game (WithBot _) ->
+                                            if model.board.currentPlayer == O then
+                                                "🤖"
                                             else
-                                                t.enemyTurn
-                                        Nothing ->
-                                            t.waitingForOpponent
-                                _ ->
-                                    if model.board.currentPlayer == X then
-                                        t.playerXTurn
-                                    else
-                                        t.playerOTurn
+                                                t.yourTurn
+                                            
+                                        Game OnlineGame ->
+                                            case model.onlinePlayer of
+                                                Just player ->
+                                                    if model.onlineOpponent == Nothing then
+                                                        t.waitingForOpponent
+                                                    else if player == model.board.currentPlayer then
+                                                        t.yourTurn
+                                                    else
+                                                        t.enemyTurn
+                                                Nothing ->
+                                                    t.waitingForOpponent
+                                        _ ->
+                                            if model.board.currentPlayer == X then
+                                                t.playerXTurn
+                                            else
+                                                t.playerOTurn
             , if model.botThinking then
                 viewThinkingIndicator
               else
@@ -1785,9 +1887,9 @@ viewThinkingIndicator =
         , style "align-items" "center"
         , style "gap" "4px"
         ]
-        [ div [ style "animation" "thinking 1s infinite" ] [ text "•" ]
-        , div [ style "animation" "thinking 1s infinite 0.3s" ] [ text "���" ]
-        , div [ style "animation" "thinking 1s infinite 0.6s" ] [ text "��" ]
+        [ div [ style "animation" "thinking 1s infinite" ] [ text "." ]
+        , div [ style "animation" "thinking 1s infinite 0.3s" ] [ text "." ]
+        , div [ style "animation" "thinking 1s infinite 0.6s" ] [ text "." ]
         ]
 
 
@@ -2299,19 +2401,15 @@ viewRulesModal model =
         ]
         [ div
             [ style "background-color" (Color.getBackground model.darkMode)
-            , style "border-radius" "20px"
             , style "padding" "30px"
-            , style "max-width" "600px"
-            , style "width" "90%"
-            , style "max-height" "90vh"
-            , style "overflow-y" "auto"
-            , style "position" "relative"
-            , stopPropagation NoOp
+            , style "border-radius" "15px"
+            , style "text-align" "center"
+            , style "animation" "slideIn 0.3s ease-out"
             ]
             [ h2
                 [ style "margin" "0 0 20px 0"
-                , style "color" (Color.getText model.darkMode)
                 , style "font-size" "1.2em"
+                , style "color" (Color.getText model.darkMode)
                 ]
                 [ text t.rulesTitle ]
             , pre
@@ -2327,7 +2425,6 @@ viewRulesModal model =
             , button
                 [ style "padding" "12px 30px"
                 , style "font-size" "0.8em"
-                , style "font-family" "inherit"
                 , style "background-color" Color.primary
                 , style "color" "white"
                 , style "border" "none"
@@ -2410,3 +2507,64 @@ applyMove move board =
 isBigBoardComplete : BigBoard -> Bool
 isBigBoardComplete board =
     List.all isSmallBoardComplete board.boards
+
+
+viewGameResultModal : Model -> Html FrontendMsg
+viewGameResultModal model =
+    let
+        t =
+            translations model.language
+
+        resultText =
+            case model.gameResult of
+                Won ->
+                    t.youWon
+
+                Lost ->
+                    t.youLost
+
+                Drew ->
+                    t.draw
+
+                Ongoing ->
+                    ""
+    in
+    div
+        [ style "position" "fixed"
+        , style "top" "0"
+        , style "left" "0"
+        , style "width" "100%"
+        , style "height" "100%"
+        , style "background-color" "rgba(0, 0, 0, 0.7)"
+        , style "display" "flex"
+        , style "align-items" "center"
+        , style "justify-content" "center"
+        , style "z-index" "1000"
+        ]
+        [ div
+            [ style "background-color" (Color.getBackground model.darkMode)
+            , style "padding" "30px"
+            , style "border-radius" "15px"
+            , style "text-align" "center"
+            , style "animation" "slideIn 0.3s ease-out"
+            ]
+            [ h2
+                [ style "margin" "0 0 20px 0"
+                , style "font-size" "1.2em"
+                , style "color" (Color.getText model.darkMode)
+                ]
+                [ text resultText ]
+            , button
+                [ style "padding" "12px 30px"
+                , style "font-size" "0.8em"
+                , style "background-color" Color.primary
+                , style "color" "white"
+                , style "border" "none"
+                , style "border-radius" "8px"
+                , style "cursor" "pointer"
+                , style "transition" "all 0.2s ease"
+                , onClick ReturnToMenu
+                ]
+                [ text t.backToMenu ]
+            ]
+        ]
