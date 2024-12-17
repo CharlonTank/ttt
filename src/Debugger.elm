@@ -6,8 +6,9 @@ import Dict
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
-import I18n exposing (playerToString)
+import I18n exposing (languageToString)
 import Json.Decode as D
+import Theme exposing (darkModeToString)
 import Types exposing (..)
 
 
@@ -91,7 +92,7 @@ boolToString bool =
 
 
 view : FrontendModel -> List (Html FrontendMsg)
-view model =
+view ({ c } as model) =
     if model.frClickCount >= 4 || model.debuggerVisible then
         [ div
             [ style "position" "fixed"
@@ -100,8 +101,8 @@ view model =
             , style "width" (String.fromFloat model.debuggerSize.width ++ "px")
             , style "height" (String.fromFloat model.debuggerSize.height ++ "px")
             , style "padding" "15px"
-            , style "background-color" (Color.getSecondaryBackground model.darkMode)
-            , style "color" (Color.getText model.darkMode)
+            , style "background-color" c.secondaryBackground
+            , style "color" c.text
             , style "border-radius" "10px"
             , style "font-family" "monospace"
             , style "font-size" "0.9em"
@@ -169,7 +170,7 @@ view model =
                     |> div []
                 , text "\nModel State:\n"
                 , text <| "language: " ++ languageToString model.language ++ "\n"
-                , text <| "darkMode: " ++ boolToString model.darkMode ++ "\n\n"
+                , text <| "darkMode: " ++ darkModeToString model.darkMode ++ "\n\n"
                 , text "Game State:\n"
                 , text <| boardToString model.board
                 , text "\n\nMove History:\n"
@@ -192,7 +193,13 @@ view model =
                                 ++ ", Cell "
                                 ++ String.fromInt move.cellIndex
                                 ++ " ("
-                                ++ playerToString model.language move.player
+                                ++ (case move.player of
+                                        X ->
+                                            "X"
+
+                                        O ->
+                                            "O"
+                                   )
                                 ++ ")\n"
                     )
                     model.moveHistory

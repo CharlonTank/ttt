@@ -1,4 +1,26 @@
-module Color exposing (..)
+module Color exposing
+    ( danger
+    , darkBackground
+    , darkBorder
+    , darkGradientBackground
+    , darkSecondaryBackground
+    , darkText
+    , darkTextHover
+    , disabled
+    , getBackground
+    , getBorder
+    , getSecondaryBackground
+    , lightBackground
+    , lightBorder
+    , lightGradientBackground
+    , lightSecondaryBackground
+    , lightText
+    , playerO
+    , playerX
+    , primary
+    , success
+    , withAlpha
+    )
 
 -- Dark Mode Colors
 
@@ -28,6 +50,11 @@ darkTextHover =
     "#f1f5f9"
 
 
+darkGradientBackground : String
+darkGradientBackground =
+    "linear-gradient(135deg, #111111 0%, #1a1f24 100%)"
+
+
 
 -- Light Mode Colors
 
@@ -50,6 +77,11 @@ lightSecondaryBackground =
 lightBorder : String
 lightBorder =
     "#e2e8f0"
+
+
+lightGradientBackground : String
+lightGradientBackground =
+    "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)"
 
 
 
@@ -101,15 +133,6 @@ getBackground isDark =
 
     else
         lightBackground
-
-
-getText : Bool -> String
-getText isDark =
-    if isDark then
-        darkText
-
-    else
-        lightText
 
 
 getSecondaryBackground : Bool -> String

@@ -11,7 +11,7 @@ import Types exposing (..)
 
 
 viewTutorialCell : FrontendModel -> Int -> Int -> List (Html.Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
-viewTutorialCell model boardIndex isClickableIndex cellStyles cellIndex cellState =
+viewTutorialCell ({ c } as model) boardIndex isClickableIndex cellStyles cellIndex cellState =
     let
         isTutorialCell =
             case model.tutorialState of
@@ -39,16 +39,8 @@ viewTutorialCell model boardIndex isClickableIndex cellStyles cellIndex cellStat
             case cellState of
                 Empty ->
                     ( Html.text ""
-                    , if model.darkMode then
-                        Color.darkText
-
-                      else
-                        Color.lightText
-                    , if model.darkMode then
-                        Color.darkBackground
-
-                      else
-                        Color.lightBackground
+                    , c.text
+                    , c.background
                     )
 
                 Filled X ->
@@ -82,11 +74,7 @@ viewTutorialCell model boardIndex isClickableIndex cellStyles cellIndex cellStat
                             ]
                         ]
                     , Color.danger
-                    , if model.darkMode then
-                        Color.darkBackground
-
-                      else
-                        Color.lightBackground
+                    , c.background
                     )
 
                 Filled O ->
@@ -112,11 +100,7 @@ viewTutorialCell model boardIndex isClickableIndex cellStyles cellIndex cellStat
                             ]
                         ]
                     , Color.primary
-                    , if model.darkMode then
-                        Color.darkBackground
-
-                      else
-                        Color.lightBackground
+                    , c.background
                     )
 
         isCellClickable =

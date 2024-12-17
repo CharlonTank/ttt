@@ -1,6 +1,4 @@
-module I18n exposing (Translation, playerToString, translations)
-
-import Types exposing (Language(..), Player(..))
+module I18n exposing (Language(..), Translation, languageToString, stringToLanguage, translations)
 
 
 type alias Translation =
@@ -26,7 +24,8 @@ type alias Translation =
     , playForMe : String
     , playerXTurn : String
     , playerOTurn : String
-    , playerWins : String -> String
+    , playerXWins : String
+    , playerOWins : String
     , rulesTitle : String
     , rulesText : String
     , close : String
@@ -48,6 +47,8 @@ type alias Translation =
     , tutorialWinningBig : String
     , tutorialComplete : String
     , tutorialTitle : String
+    , playerX : String
+    , playerO : String
     }
 
 
@@ -77,7 +78,8 @@ translations lang =
             , playForMe = "Jouer pour moi"
             , playerXTurn = "Tour du joueur X"
             , playerOTurn = "Tour du joueur O"
-            , playerWins = \player -> player ++ " gagne !"
+            , playerXWins = "Joueur X gagne !"
+            , playerOWins = "Joueur O gagne !"
             , rulesTitle = "Règles du jeu"
             , rulesText = "Le Ultimate Tic Tac Toe est une version avancée du morpion classique.\n\nLe plateau est composé de 9 petits morpions. Pour gagner, vous devez remporter 3 petits morpions alignés (horizontalement, verticalement ou en diagonale).\n\nQuand vous jouez dans une case d'un petit morpion, votre adversaire doit jouer son prochain coup dans le petit morpion correspondant. Par exemple, si vous jouez dans la case en haut à droite d'un petit morpion, votre adversaire doit jouer dans le petit morpion en haut à droite.\n\nSi vous envoyez votre adversaire dans un morpion déjà gagné ou plein (match nul), il pourra jouer dans n'importe quel petit morpion disponible.\n\nPour gagner un petit morpion, alignez 3 de vos symboles dans ce morpion, comme dans un morpion classique."
             , close = "Fermer"
@@ -99,6 +101,8 @@ translations lang =
             , tutorialWinningBig = "Pour gagner la partie, vous devez gagner trois petits morpions alignés sur le grand plateau. "
             , tutorialComplete = "Félicitations ! Vous maîtrisez maintenant les règles de base de l'Ultimate Tic Tac Toe. Prêt à relever le défi ?"
             , tutorialTitle = "Mode : Tutoriel"
+            , playerX = "Joueur X"
+            , playerO = "Joueur O"
             }
 
         EN ->
@@ -124,7 +128,8 @@ translations lang =
             , playForMe = "Play for me"
             , playerXTurn = "Player X's turn"
             , playerOTurn = "Player O's turn"
-            , playerWins = \player -> player ++ " wins!"
+            , playerXWins = "Player X wins!"
+            , playerOWins = "Player O wins!"
             , rulesTitle = "Game Rules"
             , rulesText = "Ultimate Tic Tac Toe is an advanced version of the classic game.\n\nThe board consists of 9 small tic tac toe boards. To win, you need to win 3 small boards in a line (horizontally, vertically, or diagonally).\n\nWhen you play in a cell of a small board, your opponent must play their next move in the corresponding small board. For example, if you play in the top-right cell of any small board, your opponent must play in the top-right small board.\n\nIf you send your opponent to a board that's already won or full (drawn), they can play in any available small board.\n\nTo win a small board, get 3 of your marks in a line within that board, just like in regular Tic Tac Toe."
             , close = "Close"
@@ -146,24 +151,31 @@ translations lang =
             , tutorialWinningBig = "Well done! To win the game, you need to win three small boards in a line on the big board. Keep playing strategically!"
             , tutorialComplete = "Congratulations! You now master the basic rules of Ultimate Tic Tac Toe. Ready to take on the challenge?"
             , tutorialTitle = "Mode: Tutorial"
+            , playerX = "Player X"
+            , playerO = "Player O"
             }
 
 
-playerToString : Language -> Player -> String
-playerToString lang player =
+type Language
+    = FR
+    | EN
+
+
+languageToString : Language -> String
+languageToString lang =
     case lang of
         FR ->
-            case player of
-                X ->
-                    "Joueur X"
-
-                O ->
-                    "Joueur O"
+            "FR"
 
         EN ->
-            case player of
-                X ->
-                    "Player X"
+            "EN"
 
-                O ->
-                    "Player O"
+
+stringToLanguage : String -> Language
+stringToLanguage str =
+    case str of
+        "EN" ->
+            EN
+
+        _ ->
+            FR

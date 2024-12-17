@@ -11,7 +11,7 @@ import Dict exposing (Dict)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
-import I18n exposing (Translation, translations)
+import I18n exposing (Language(..), Translation, languageToString, stringToLanguage, translations)
 import Json.Decode as D
 import Json.Encode as E
 import Lamdera
@@ -21,6 +21,7 @@ import String
 import Svg exposing (Svg, circle, line, svg)
 import Svg.Attributes
 import Task
+import Theme exposing (DarkOrLight(..), darkModeToString, stringToDarkOrLight, themes)
 import Time
 import Tutorial.Tutorial exposing (getTutorialBoard, isTutorialMoveValid)
 import Tutorial.Types exposing (TutorialStep(..))
@@ -47,7 +48,7 @@ init url key =
       , board = initialBoard X
       , route = Home
       , language = EN
-      , darkMode = False
+      , darkMode = Dark
       , moveHistory = []
       , currentMoveIndex = -1
       , rulesModalVisible = False
@@ -69,6 +70,8 @@ init url key =
       , botThinking = False
       , inMatchmaking = False
       , onlineOpponent = Nothing
+      , t = translations EN
+      , c = Theme.themes Dark
       }
     , Cmd.batch
         [ getLocalStorageValue_ "language"
@@ -394,15 +397,31 @@ update msg model =
                 ( model, Cmd.none )
 
         ToggleDarkMode ->
-            ( { model | darkMode = not model.darkMode }
-            , storeLocalStorage { key = "darkMode", value = boolToString (not model.darkMode) }
+            let
+                newDarkMode =
+                    if model.darkMode == Dark then
+                        Light
+
+                    else
+                        Dark
+            in
+            ( { model
+                | darkMode = newDarkMode
+                , c = Theme.themes newDarkMode
+              }
+            , storeLocalStorage { key = "darkMode", value = darkModeToString newDarkMode }
             )
 
         ToggleDebugMode ->
             ( model, Cmd.none )
 
         ReceivedLocalStorage { language, darkMode } ->
-            ( { model | language = stringToLanguage language, darkMode = darkMode }
+            ( { model
+                | language = stringToLanguage language
+                , darkMode = stringToDarkOrLight darkMode
+                , t = language |> stringToLanguage |> translations
+                , c = themes model.darkMode
+              }
             , Cmd.none
             )
 
@@ -1440,22 +1459,7 @@ updateFromBackend msg model =
 
 
 view : FrontendModel -> Browser.Document FrontendMsg
-view model =
-    let
-        t =
-            translations model.language
-
-        darkModeStyles =
-            if model.darkMode then
-                [ style "background-color" Color.darkBackground
-                , style "color" Color.darkText
-                ]
-
-            else
-                [ style "background-color" Color.lightBackground
-                , style "color" Color.lightText
-                ]
-    in
+view ({ t, c } as model) =
     { title = t.welcome
     , body =
         [ Html.node "link"
@@ -1493,13 +1497,7 @@ view model =
             [ style "min-height" "100vh"
             , style "min-height" "100dvh"
             , style "width" "100%"
-            , style "background"
-                (if model.darkMode then
-                    "linear-gradient(135deg, #111111 0%, #1a1f24 100%)"
-
-                 else
-                    "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)"
-                )
+            , style "background" c.gradientBackground
             , style "display" "flex"
             , style "align-items" "center"
             , style "justify-content" "center"
@@ -1512,7 +1510,7 @@ view model =
             ([ viewLanguageSelector model
              , case model.route of
                 Home ->
-                    viewHome model t
+                    viewHome model
 
                 Game mode ->
                     viewGame model mode
@@ -1540,18 +1538,12 @@ view model =
 
 
 viewGameButton : FrontendModel -> String -> FrontendMsg -> Html FrontendMsg
-viewGameButton model label msg =
+viewGameButton ({ c } as model) label msg =
     button
         [ style "padding" "15px 20px"
         , style "font-size" "0.8em"
         , style "font-family" "inherit"
-        , style "background-color"
-            (if model.darkMode then
-                Color.darkSecondaryBackground
-
-             else
-                Color.primary
-            )
+        , style "background-color" c.secondaryBackground
         , style "color" "white"
         , style "border" "none"
         , style "border-radius" "10px"
@@ -1566,38 +1558,26 @@ viewGameButton model label msg =
         [ text label ]
 
 
-viewHome : FrontendModel -> Translation -> Html FrontendMsg
-viewHome model t =
-    let
-        darkModeStyles =
-            if model.darkMode then
-                [ style "background-color" Color.darkBackground
-                , style "color" Color.darkText
-                ]
-
-            else
-                [ style "background-color" Color.lightBackground
-                , style "color" Color.lightText
-                ]
-    in
+viewHome : FrontendModel -> Html FrontendMsg
+viewHome ({ t, c } as model) =
     div
-        ([ style "border-radius" "20px"
-         , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
-         , style "padding" "40px"
-         , style "text-align" "center"
-         , style "max-width" "400px"
-         , style "width" "90%"
-         ]
-            ++ darkModeStyles
-        )
+        [ style "border-radius" "20px"
+        , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
+        , style "padding" "40px"
+        , style "text-align" "center"
+        , style "max-width" "400px"
+        , style "width" "90%"
+        , style "background-color" c.background
+        , style "color" c.text
+        ]
         [ h1
             [ style "margin" "0 0 20px 0"
-            , style "color" (Color.getText model.darkMode)
+            , style "color" c.text
             , style "font-size" "1.5em"
             ]
             [ text t.welcome ]
         , p
-            [ style "color" (Color.getText model.darkMode)
+            [ style "color" c.text
             , style "margin-bottom" "30px"
             , style "line-height" "1.6"
             , style "font-size" "0.7em"
@@ -1628,13 +1608,7 @@ viewHome model t =
                 , style "padding" "15px 20px"
                 , style "font-size" "0.8em"
                 , style "font-family" "inherit"
-                , style "background-color"
-                    (if model.darkMode then
-                        Color.darkSecondaryBackground
-
-                     else
-                        Color.primary
-                    )
+                , style "background-color" c.secondaryBackground
                 , style "color" "white"
                 , style "border" "none"
                 , style "border-radius" "10px"
@@ -1676,22 +1650,8 @@ viewHome model t =
 
 
 viewGame : FrontendModel -> GameMode -> Html FrontendMsg
-viewGame model mode =
+viewGame ({ t, c } as model) mode =
     let
-        t =
-            translations model.language
-
-        darkModeStyles =
-            if model.darkMode then
-                [ style "background-color" Color.darkBackground
-                , style "color" Color.darkText
-                ]
-
-            else
-                [ style "background-color" Color.lightBackground
-                , style "color" Color.lightText
-                ]
-
         gameTitle =
             case model.tutorialState of
                 Just _ ->
@@ -1722,21 +1682,21 @@ viewGame model mode =
                             t.playingOnline
     in
     div
-        ([ style "display" "flex"
-         , style "flex-direction" "column"
-         , style "padding-top" "20px"
-         , style "padding-bottom" "20px"
-         , style "border-radius" "20px"
-         , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
-         , style "width" "100%"
-         , style "max-width" "100vh"
-         , style "margin" "auto"
-         , style "box-sizing" "border-box"
-         , style "position" "relative"
-         , style "height" "100%"
-         ]
-            ++ darkModeStyles
-        )
+        [ style "display" "flex"
+        , style "flex-direction" "column"
+        , style "padding-top" "20px"
+        , style "padding-bottom" "20px"
+        , style "border-radius" "20px"
+        , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
+        , style "width" "100%"
+        , style "max-width" "100vh"
+        , style "margin" "auto"
+        , style "box-sizing" "border-box"
+        , style "position" "relative"
+        , style "height" "100%"
+        , style "background-color" c.background
+        , style "color" c.text
+        ]
         [ div
             [ style "text-align" "center"
             , style "padding" "10px"
@@ -1994,11 +1954,7 @@ viewGame model mode =
 
 
 viewBotDifficultyMenu : FrontendModel -> Html FrontendMsg
-viewBotDifficultyMenu model =
-    let
-        t =
-            translations model.language
-    in
+viewBotDifficultyMenu ({ t, c } as model) =
     div
         [ style "display" "flex"
         , style "flex-direction" "column"
@@ -2007,7 +1963,7 @@ viewBotDifficultyMenu model =
         ]
         [ h2
             [ style "margin" "0 0 15px 0"
-            , style "color" (Color.getText model.darkMode)
+            , style "color" c.text
             , style "font-size" "1.5em"
             ]
             [ text t.chooseDifficulty ]
@@ -2016,7 +1972,7 @@ viewBotDifficultyMenu model =
         , viewDifficultyButton model t.hard Hard
         , viewDifficultyButton model t.elite Elite
         , case model.selectedDifficulty of
-            Just difficulty ->
+            Just _ ->
                 div
                     [ style "display" "flex"
                     , style "gap" "10px"
@@ -2084,7 +2040,7 @@ viewBotDifficultyMenu model =
 
 
 viewDifficultyButton : FrontendModel -> String -> BotDifficulty -> Html FrontendMsg
-viewDifficultyButton model label difficulty =
+viewDifficultyButton ({ c } as model) label difficulty =
     button
         [ style "padding" "12px"
         , style "font-size" "0.8em"
@@ -2093,11 +2049,8 @@ viewDifficultyButton model label difficulty =
             (if model.selectedDifficulty == Just difficulty then
                 Color.success
 
-             else if model.darkMode then
-                Color.darkSecondaryBackground
-
              else
-                Color.primary
+                c.secondaryBackground
             )
         , style "color" "white"
         , style "border" "none"
@@ -2110,15 +2063,21 @@ viewDifficultyButton model label difficulty =
         [ text label ]
 
 
+playerToString : Translation -> Player -> String
+playerToString t player =
+    case player of
+        X ->
+            t.playerX
+
+        O ->
+            t.playerO
+
+
 viewStatus : FrontendModel -> Html msg
-viewStatus model =
-    let
-        t =
-            translations model.language
-    in
+viewStatus ({ t, c } as model) =
     div
         [ style "margin" "10px 0"
-        , style "color" (Color.getText model.darkMode)
+        , style "color" c.text
         , style "font-size" "0.7em"
         ]
         [ div
@@ -2152,10 +2111,20 @@ viewStatus model =
                                                     t.youLost
 
                                             Nothing ->
-                                                t.playerWins (I18n.playerToString model.language player)
+                                                case player of
+                                                    X ->
+                                                        t.playerXWins
+
+                                                    O ->
+                                                        t.playerOWins
 
                                     _ ->
-                                        t.playerWins (I18n.playerToString model.language player)
+                                        case player of
+                                            X ->
+                                                t.playerXWins
+
+                                            O ->
+                                                t.playerOWins
 
                             Nothing ->
                                 if isBigBoardComplete model.board then
@@ -2214,7 +2183,7 @@ viewThinkingIndicator =
 
 
 viewLanguageSelector : FrontendModel -> Html FrontendMsg
-viewLanguageSelector model =
+viewLanguageSelector ({ c } as model) =
     div
         [ style "position" "absolute"
         , style "top" "5px"
@@ -2222,31 +2191,22 @@ viewLanguageSelector model =
         , style "display" "flex"
         , style "gap" "10px"
         , style "align-items" "center"
-        , style "background-color"
-            (Color.withAlpha
-                (if model.darkMode then
-                    Color.darkBackground
-
-                 else
-                    Color.lightBackground
-                )
-                0.8
-            )
+        , style "background-color" (Color.withAlpha c.background 0.8)
         , style "padding" "6px"
         , style "border-radius" "10px"
         , style "backdrop-filter" "blur(10px)"
         , style "box-shadow" "0 2px 10px rgba(0, 0, 0, 0.1)"
         , style "z-index" "1000"
         ]
-        [ viewDarkModeButton model.darkMode
-        , div [ style "width" "1px", style "height" "20px", style "background-color" (Color.getBorder model.darkMode) ] []
-        , viewLanguageButton "FR" FR (model.language == FR) model.darkMode
-        , viewLanguageButton "EN" EN (model.language == EN) model.darkMode
+        [ viewDarkModeButton model
+        , div [ style "width" "1px", style "height" "20px", style "background-color" c.border ] []
+        , viewLanguageButton "FR" FR (model.language == FR) (model.darkMode == Dark)
+        , viewLanguageButton "EN" EN (model.language == EN) (model.darkMode == Dark)
         ]
 
 
-viewDarkModeButton : Bool -> Html FrontendMsg
-viewDarkModeButton isDark =
+viewDarkModeButton : FrontendModel -> Html FrontendMsg
+viewDarkModeButton ({ c } as model) =
     button
         [ style "padding" "8px"
         , style "font-size" "1.1em"
@@ -2257,18 +2217,12 @@ viewDarkModeButton isDark =
         , style "align-items" "center"
         , style "justify-content" "center"
         , style "font-family" "inherit"
-        , style "color"
-            (if isDark then
-                Color.darkTextHover
-
-             else
-                Color.lightText
-            )
+        , style "color" c.textHover
         , style "transition" "all 0.2s ease"
         , onClick ToggleDarkMode
         ]
         [ text
-            (if isDark then
+            (if model.darkMode == Dark then
                 "🌙"
 
              else
@@ -2313,7 +2267,7 @@ viewLanguageButton label lang isActive isDark =
 
 
 viewBigBoard : FrontendModel -> Html FrontendMsg
-viewBigBoard model =
+viewBigBoard ({ c } as model) =
     let
         isBotTurn =
             case model.route of
@@ -2359,7 +2313,7 @@ viewBigBoard model =
             , style "aspect-ratio" "1/1"
             , style "margin" "0 auto"
             , style "padding" "4px"
-            , style "background-color" (Color.getBorder model.darkMode)
+            , style "background-color" c.border
             , style "border-radius" "12px"
             ]
 
@@ -2379,7 +2333,7 @@ viewBigBoard model =
 
 
 viewSmallBoard : FrontendModel -> Int -> SmallBoard -> Html FrontendMsg
-viewSmallBoard model boardIndex smallBoardData =
+viewSmallBoard ({ c } as model) boardIndex smallBoardData =
     let
         isActive =
             case model.board.activeBoard of
@@ -2456,14 +2410,14 @@ viewSmallBoard model boardIndex smallBoardData =
                         Color.success
 
                     else
-                        Color.getBorder model.darkMode
+                        c.border
 
                 _ ->
                     if isActive then
                         Color.success
 
                     else
-                        Color.getBorder model.darkMode
+                        c.border
 
         backgroundColor =
             case smallBoardData.winner of
@@ -2478,10 +2432,10 @@ viewSmallBoard model boardIndex smallBoardData =
                         Color.disabled
 
                     else
-                        Color.getBackground model.darkMode
+                        c.background
 
         cellStyle =
-            [ style "box-shadow" ("inset 0 0 0 1px " ++ Color.getBorder model.darkMode) ]
+            [ style "box-shadow" ("inset 0 0 0 1px " ++ c.border) ]
 
         shouldBlink =
             not isViewingHistory
@@ -2531,8 +2485,8 @@ viewSmallBoard model boardIndex smallBoardData =
         cellElements
 
 
-viewCell : FrontendModel -> Int -> Bool -> List (Html.Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
-viewCell model boardIndex isClickable cellStyles cellIndex cellState =
+viewCell : FrontendModel -> Int -> Bool -> List (Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
+viewCell ({ c } as model) boardIndex isClickable cellStyles cellIndex cellState =
     case model.tutorialState of
         Just _ ->
             Tutorial.View.viewTutorialCell model
@@ -2549,20 +2503,11 @@ viewCell model boardIndex isClickable cellStyles cellIndex cellState =
 
         Nothing ->
             let
-                ( symbol, textColor, bgColor ) =
+                ( symbol, textColor ) =
                     case cellState of
                         Empty ->
                             ( Html.text ""
-                            , if model.darkMode then
-                                Color.darkText
-
-                              else
-                                Color.lightText
-                            , if model.darkMode then
-                                Color.darkBackground
-
-                              else
-                                Color.lightBackground
+                            , c.text
                             )
 
                         Filled X ->
@@ -2596,11 +2541,6 @@ viewCell model boardIndex isClickable cellStyles cellIndex cellState =
                                     ]
                                 ]
                             , Color.danger
-                            , if model.darkMode then
-                                Color.darkBackground
-
-                              else
-                                Color.lightBackground
                             )
 
                         Filled O ->
@@ -2626,11 +2566,6 @@ viewCell model boardIndex isClickable cellStyles cellIndex cellState =
                                     ]
                                 ]
                             , Color.primary
-                            , if model.darkMode then
-                                Color.darkBackground
-
-                              else
-                                Color.lightBackground
                             )
 
                 isCellClickable =
@@ -2663,7 +2598,7 @@ viewCell model boardIndex isClickable cellStyles cellIndex cellState =
             div
                 ([ style "width" "100%"
                  , style "aspect-ratio" "1/1"
-                 , style "background-color" bgColor
+                 , style "background-color" c.background
                  , style "display" "flex"
                  , style "align-items" "center"
                  , style "justify-content" "center"
@@ -2756,15 +2691,6 @@ storageDecoder =
         (D.field "darkMode" D.bool)
 
 
-boolToString : Bool -> String
-boolToString bool =
-    if bool then
-        "true"
-
-    else
-        "false"
-
-
 localStorageValueDecoder : D.Decoder { key : String, value : String }
 localStorageValueDecoder =
     D.map2 (\k v -> { key = k, value = v })
@@ -2795,11 +2721,7 @@ reconstructBoardFromMoves moves upToIndex initialBoardState =
 
 
 viewRulesModal : FrontendModel -> Html FrontendMsg
-viewRulesModal model =
-    let
-        t =
-            translations model.language
-    in
+viewRulesModal ({ t, c } as model) =
     div
         [ style "position" "fixed"
         , style "top" "0"
@@ -2814,7 +2736,7 @@ viewRulesModal model =
         , onClick ToggleRulesModal
         ]
         [ div
-            [ style "background-color" (Color.getBackground model.darkMode)
+            [ style "background-color" c.background
             , style "padding" "30px"
             , style "border-radius" "15px"
             , style "text-align" "center"
@@ -2825,11 +2747,11 @@ viewRulesModal model =
             [ h2
                 [ style "margin" "0 0 20px 0"
                 , style "font-size" "1.2em"
-                , style "color" (Color.getText model.darkMode)
+                , style "color" c.text
                 ]
                 [ text t.rulesTitle ]
             , pre
-                [ style "color" (Color.getText model.darkMode)
+                [ style "color" c.text
                 , style "white-space" "pre-wrap"
                 , style "font-family" "inherit"
                 , style "text-align" "left"
@@ -2907,13 +2829,10 @@ shouldEnableNextButton model =
 
 
 viewTutorialOverlay : FrontendModel -> Html FrontendMsg
-viewTutorialOverlay model =
+viewTutorialOverlay ({ t, c } as model) =
     case model.tutorialState of
         Just step ->
             let
-                t =
-                    translations model.language
-
                 tutorialMessage =
                     case step of
                         TutorialBasicMove ->
@@ -2988,7 +2907,7 @@ viewTutorialOverlay model =
             div
                 ([ style "position" "fixed"
                  , style "left" "50%"
-                 , style "background-color" (Color.withAlpha (Color.getBackground model.darkMode) 0.85)
+                 , style "background-color" (Color.withAlpha c.background 0.85)
                  , style "padding" "20px"
                  , style "border-radius" "15px"
                  , style "box-shadow" "0 4px 12px rgba(0, 0, 0, 0.2)"
@@ -3003,13 +2922,13 @@ viewTutorialOverlay model =
                 )
                 [ div
                     [ style "margin-bottom" "10px"
-                    , style "color" (Color.getText model.darkMode)
+                    , style "color" c.text
                     , style "font-size" "0.8em"
                     ]
                     [ text (String.fromInt stepNumber ++ "/6") ]
                 , p
                     [ style "margin" "0 0 15px 0"
-                    , style "color" (Color.getText model.darkMode)
+                    , style "color" c.text
                     , style "font-size" "1em"
                     , style "line-height" "1.5"
                     ]
@@ -3032,25 +2951,7 @@ isBigBoardComplete board =
 
 
 viewGameResultModal : FrontendModel -> Html FrontendMsg
-viewGameResultModal model =
-    let
-        t =
-            translations model.language
-
-        resultText =
-            case model.gameResult of
-                Won ->
-                    t.youWon
-
-                Lost ->
-                    t.youLost
-
-                Drew ->
-                    t.draw
-
-                Ongoing ->
-                    ""
-    in
+viewGameResultModal ({ t, c } as model) =
     div
         [ style "position" "fixed"
         , style "top" "0"
@@ -3064,7 +2965,7 @@ viewGameResultModal model =
         , style "z-index" "1000"
         ]
         [ div
-            [ style "background-color" (Color.getBackground model.darkMode)
+            [ style "background-color" c.background
             , style "padding" "30px"
             , style "border-radius" "15px"
             , style "text-align" "center"
@@ -3073,9 +2974,22 @@ viewGameResultModal model =
             [ h2
                 [ style "margin" "0 0 20px 0"
                 , style "font-size" "1.2em"
-                , style "color" (Color.getText model.darkMode)
+                , style "color" c.text
                 ]
-                [ text resultText ]
+                [ text <|
+                    case model.gameResult of
+                        Won ->
+                            t.youWon
+
+                        Lost ->
+                            t.youLost
+
+                        Drew ->
+                            t.draw
+
+                        Ongoing ->
+                            ""
+                ]
             , button
                 [ style "padding" "12px 30px"
                 , style "font-size" "0.8em"

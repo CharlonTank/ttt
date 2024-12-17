@@ -3,10 +3,12 @@ port module Types exposing (..)
 import Browser exposing (UrlRequest)
 import Browser.Navigation exposing (Key)
 import Dict exposing (Dict)
+import I18n exposing (Language(..), Translation)
 import Json.Decode as D
 import Json.Encode as E
 import Lamdera exposing (ClientId)
 import Random
+import Theme exposing (DarkOrLight(..), Theme)
 import Time
 import Tutorial.Types exposing (TutorialStep)
 import Url exposing (Url)
@@ -78,11 +80,6 @@ type Route
     | Game GameMode
 
 
-type Language
-    = FR
-    | EN
-
-
 type GameResult
     = Won
     | Lost
@@ -95,7 +92,7 @@ type alias FrontendModel =
     , board : BigBoard
     , route : Route
     , language : Language
-    , darkMode : Bool
+    , darkMode : DarkOrLight
     , moveHistory : List Move
     , currentMoveIndex : Int
     , rulesModalVisible : Bool
@@ -117,6 +114,8 @@ type alias FrontendModel =
     , botThinking : Bool
     , inMatchmaking : Bool
     , onlineOpponent : Maybe ClientId
+    , t : Translation
+    , c : Theme
     }
 
 
@@ -193,26 +192,6 @@ type ToFrontend
 
 
 -- HELPERS
-
-
-languageToString : Language -> String
-languageToString lang =
-    case lang of
-        FR ->
-            "FR"
-
-        EN ->
-            "EN"
-
-
-stringToLanguage : String -> Language
-stringToLanguage str =
-    case str of
-        "EN" ->
-            EN
-
-        _ ->
-            FR
 
 
 type alias Position =
