@@ -5,6 +5,7 @@ import Effect.Http exposing (Response(..))
 import Effect.Subscription as Subscription
 import Effect.Test exposing (FileUpload(..), HttpResponse(..), MultipleFilesUpload(..))
 import Html
+import Time
 import Url
 
 
@@ -30,7 +31,7 @@ backendApp =
 
 
 unsafeUrl =
-    case Url.fromString "my-test.app" of
+    case Url.fromString "https://my-test.app" of
         Just url ->
             url
 
@@ -51,7 +52,11 @@ config =
 
 
 test =
-    Effect.Test.start config "A test"
+    Effect.Test.start
+        "A test"
+        (Time.millisToPosix 0)
+        config
+        []
 
 
 main : Program () (Effect.Test.Model {} {} {} {} {} {}) (Effect.Test.Msg {} {} {} {} {} {})
