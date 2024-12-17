@@ -6,6 +6,7 @@ import Color
 import Debugger
 import Dict exposing (Dict)
 import Duration
+import Effect.Browser.Dom as Dom exposing (HtmlId)
 import Effect.Browser.Events
 import Effect.Browser.Navigation as Nav exposing (Key)
 import Effect.Command as Command exposing (Command, FrontendOnly)
@@ -36,14 +37,18 @@ import Url
 app =
     Effect.Lamdera.frontend
         Lamdera.sendToBackend
-        { init = init
-        , onUrlRequest = UrlClicked
-        , onUrlChange = UrlChanged
-        , update = update
-        , updateFromBackend = updateFromBackend
-        , subscriptions = subscriptions
-        , view = view
-        }
+        app_
+
+
+app_ =
+    { init = init
+    , onUrlRequest = UrlClicked
+    , onUrlChange = UrlChanged
+    , update = update
+    , updateFromBackend = updateFromBackend
+    , subscriptions = subscriptions
+    , view = view
+    }
 
 
 init : Url.Url -> Key -> ( FrontendModel, Command FrontendOnly ToBackend FrontendMsg )
@@ -354,8 +359,7 @@ update msg model =
 
                             else
                                 model.frClickCount
-                                
-                        }
+                    }
             in
             ( newModel
             , Command.sendToJs
@@ -529,17 +533,17 @@ update msg model =
                                         case key of
                                             "language" ->
                                                 { model | language = stringToLanguage value, t = translations (stringToLanguage value) }
-                                            
+
                                             "darkMode" ->
                                                 { model | darkMode = stringToDarkOrLight value, c = themes (stringToDarkOrLight value) }
-                                            
+
                                             _ ->
                                                 model
-                                    
+
                                     Err _ ->
                                         model
                             )
-                            |> Debug.log "decodedValue"
+                        |> Debug.log "decodedValue"
                         |> Result.withDefault model
             in
             ( decodedValue, Command.none )
@@ -1587,8 +1591,8 @@ view ({ t, c } as model) =
     }
 
 
-viewGameButton : FrontendModel -> String -> FrontendMsg -> Html FrontendMsg
-viewGameButton ({ c } as model) label msg =
+viewGameButton : HtmlId -> FrontendModel -> String -> FrontendMsg -> Html FrontendMsg
+viewGameButton htmlId ({ c } as model) label msg =
     button
         [ style "padding" "15px 20px"
         , style "font-size" "0.8em"
@@ -1604,6 +1608,7 @@ viewGameButton ({ c } as model) label msg =
         , style "width" "100%"
         , style "max-width" "300px"
         , onClick msg
+        , Dom.idToAttribute htmlId
         ]
         [ text label ]
 
@@ -1622,6 +1627,7 @@ viewHome ({ t, c } as model) =
         ]
         [ if model.botDifficultyMenuOpen then
             viewBotDifficultyMenu model
+
           else
             div []
                 [ h1
@@ -1643,14 +1649,15 @@ viewHome ({ t, c } as model) =
                     , style "align-items" "center"
                     , style "gap" "15px"
                     ]
-                    [ viewGameButton model t.playWithFriend StartGameWithFriend
-                    , viewGameButton model t.playWithBot StartGameWithBot
-                    , viewGameButton model t.rulesTitle ToggleRulesModal
+                    [ viewGameButton (Dom.id "gameWithFriend") model t.playWithFriend StartGameWithFriend
+                    , viewGameButton (Dom.id "gameWithBot") model t.playWithBot StartGameWithBot
+                    , viewGameButton (Dom.id "toggleRules") model t.rulesTitle ToggleRulesModal
                     , button
                         [ class "menu-button"
                         , onClick
                             (if model.inMatchmaking then
                                 LeaveMatchmaking
+
                              else
                                 StartOnlineGame
                             )
@@ -1670,6 +1677,7 @@ viewHome ({ t, c } as model) =
                         , style "opacity"
                             (if model.inMatchmaking then
                                 "0.7"
+
                              else
                                 "1"
                             )
@@ -1684,6 +1692,7 @@ viewHome ({ t, c } as model) =
                                 [ text t.searching
                                 , viewThinkingIndicator
                                 ]
+
                           else
                             text t.playOnline
                         ]
@@ -1691,6 +1700,7 @@ viewHome ({ t, c } as model) =
                 ]
         , if model.rulesModalVisible then
             viewRulesModal model
+
           else
             text ""
         ]
@@ -2313,7 +2323,6 @@ viewLanguageButton label lang isActive isDark =
         [ text label ]
 
 
-
 viewBigBoard : FrontendModel -> Html FrontendMsg
 viewBigBoard ({ c } as model) =
     let
@@ -2533,8 +2542,6 @@ viewSmallBoard ({ c } as model) boardIndex smallBoardData =
         cellElements
 
 
-
-
 viewCell : FrontendModel -> Int -> Bool -> List (Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
 viewCell ({ c } as model) boardIndex isClickable cellStyles cellIndex cellState =
     case model.tutorialState of
@@ -2656,6 +2663,7 @@ viewCell ({ c } as model) boardIndex isClickable cellStyles cellIndex cellState 
                  , style "color" textColor
                  , style "user-select" "none"
                  , style "position" "relative"
+                 , Dom.idToAttribute (cellId boardIndex cellIndex)
                  ]
                     ++ cornerRadius
                     ++ cellStyles
@@ -2667,6 +2675,11 @@ viewCell ({ c } as model) boardIndex isClickable cellStyles cellIndex cellState 
                        )
                 )
                 [ symbol ]
+
+
+cellId : Int -> Int -> HtmlId
+cellId boardIndex cellIndex =
+    "cell_" ++ String.fromInt boardIndex ++ "_" ++ String.fromInt cellIndex |> Dom.id
 
 
 

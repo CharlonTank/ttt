@@ -1,26 +1,29 @@
 module Backend exposing (..)
 
-import Effect.Command as Command exposing (Command)
+import Effect.Command as Command exposing (BackendOnly, Command)
 import Effect.Lamdera exposing (ClientId, SessionId, broadcast, sendToFrontend)
 import Effect.Subscription as Subscription exposing (Subscription)
 import Effect.Task
 import Effect.Time
+import Lamdera
 import List.Extra
 import Random
 import Types exposing (..)
-import Effect.Command exposing (BackendOnly)
-import Lamdera
 
 
 app =
     Effect.Lamdera.backend
         Lamdera.broadcast
         Lamdera.sendToFrontend
-        { init = init
-        , update = update
-        , updateFromFrontend = updateFromFrontend
-        , subscriptions = subscriptions
-        }
+        app_
+
+
+app_ =
+    { init = init
+    , update = update
+    , updateFromFrontend = updateFromFrontend
+    , subscriptions = subscriptions
+    }
 
 
 subscriptions : BackendModel -> Subscription BackendOnly BackendMsg
