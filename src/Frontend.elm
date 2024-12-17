@@ -1587,8 +1587,8 @@ view ({ t, c } as model) =
     }
 
 
-viewGameButton : FrontendModel -> String -> FrontendMsg -> Html FrontendMsg
-viewGameButton ({ c } as model) label msg =
+viewGameButton : FrontendModel -> String -> FrontendMsg -> String -> Html FrontendMsg
+viewGameButton ({ c } as model) label msg buttonId =
     button
         [ style "padding" "15px 20px"
         , style "font-size" "0.8em"
@@ -1604,6 +1604,7 @@ viewGameButton ({ c } as model) label msg =
         , style "width" "100%"
         , style "max-width" "300px"
         , onClick msg
+        , Html.Attributes.id buttonId
         ]
         [ text label ]
 
@@ -1643,9 +1644,9 @@ viewHome ({ t, c } as model) =
                     , style "align-items" "center"
                     , style "gap" "15px"
                     ]
-                    [ viewGameButton model t.playWithFriend StartGameWithFriend
-                    , viewGameButton model t.playWithBot StartGameWithBot
-                    , viewGameButton model t.rulesTitle ToggleRulesModal
+                    [ viewGameButton model t.playWithFriend StartGameWithFriend "play-with-friend-button"
+                    , viewGameButton model t.playWithBot StartGameWithBot "play-with-bot-button"
+                    , viewGameButton model t.rulesTitle ToggleRulesModal "rules-modal-button"
                     , button
                         [ class "menu-button"
                         , onClick
@@ -1673,6 +1674,7 @@ viewHome ({ t, c } as model) =
                              else
                                 "1"
                             )
+                        , Html.Attributes.id (if model.inMatchmaking then "leave-matchmaking-button" else "start-online-game-button")
                         ]
                         [ if model.inMatchmaking then
                             div
@@ -1928,6 +1930,7 @@ viewGame ({ t, c } as model) mode =
                             , style "margin-bottom" "10px"
                             , style "width" "100%"
                             , onClick ReturnToMenu
+                            , Html.Attributes.id "back-to-menu-button"
                             ]
                             [ text t.backToMenu ]
 
@@ -2036,6 +2039,7 @@ viewBotDifficultyMenu ({ t, c } as model) =
                         , style "cursor" "pointer"
                         , style "font-family" "inherit"
                         , onClick (StartWithPlayer True)
+                        , Html.Attributes.id "human-starts-button"
                         ]
                         [ text t.humanStarts ]
                     , button
@@ -2049,6 +2053,7 @@ viewBotDifficultyMenu ({ t, c } as model) =
                         , style "cursor" "pointer"
                         , style "font-family" "inherit"
                         , onClick (StartWithPlayer False)
+                        , Html.Attributes.id "bot-starts-button"
                         ]
                         [ text t.botStarts ]
                     , button
@@ -2062,6 +2067,7 @@ viewBotDifficultyMenu ({ t, c } as model) =
                         , style "cursor" "pointer"
                         , style "font-family" "inherit"
                         , onClick StartWithRandomPlayer
+                        , Html.Attributes.id "random-starts-button"
                         ]
                         [ text t.randomStarts ]
                     ]
@@ -2314,6 +2320,7 @@ viewLanguageButton label lang isActive isDark =
 
 
 
+
 viewBigBoard : FrontendModel -> Html FrontendMsg
 viewBigBoard ({ c } as model) =
     let
@@ -2378,6 +2385,7 @@ viewBigBoard ({ c } as model) =
     div
         (boardStyle ++ blinkStyle)
         boardElements
+
 
 
 viewSmallBoard : FrontendModel -> Int -> SmallBoard -> Html FrontendMsg
@@ -2535,6 +2543,7 @@ viewSmallBoard ({ c } as model) boardIndex smallBoardData =
 
 
 
+
 viewCell : FrontendModel -> Int -> Bool -> List (Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
 viewCell ({ c } as model) boardIndex isClickable cellStyles cellIndex cellState =
     case model.tutorialState of
@@ -2656,6 +2665,7 @@ viewCell ({ c } as model) boardIndex isClickable cellStyles cellIndex cellState 
                  , style "color" textColor
                  , style "user-select" "none"
                  , style "position" "relative"
+                 , Html.Attributes.id ("cell-" ++ String.fromInt boardIndex ++ "-" ++ String.fromInt cellIndex)
                  ]
                     ++ cornerRadius
                     ++ cellStyles
@@ -3051,6 +3061,7 @@ viewGameResultModal ({ t, c } as model) =
                 , style "cursor" "pointer"
                 , style "transition" "all 0.2s ease"
                 , onClick ReturnToMenu
+                , Html.Attributes.id "back-to-menu-button"
                 ]
                 [ text t.backToMenu ]
             ]
