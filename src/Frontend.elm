@@ -2,12 +2,18 @@ module Frontend exposing (..)
 
 import Bot
 import Browser exposing (UrlRequest(..))
-import Browser.Events
-import Browser.Navigation as Nav exposing (Key)
 import Color
-import Debug
 import Debugger
 import Dict exposing (Dict)
+import Duration
+import Effect.Browser.Events
+import Effect.Browser.Navigation as Nav exposing (Key)
+import Effect.Command as Command exposing (Command, FrontendOnly)
+import Effect.Lamdera
+import Effect.Process
+import Effect.Subscription as Subscription exposing (Subscription)
+import Effect.Task
+import Effect.Time
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
@@ -16,13 +22,10 @@ import Json.Decode as D
 import Json.Encode as E
 import Lamdera
 import List.Extra as List
-import Process
 import String
 import Svg exposing (Svg, circle, line, svg)
 import Svg.Attributes
-import Task
-import Theme exposing (DarkOrLight(..), darkModeToString, stringToDarkOrLight, themes)
-import Time
+import Theme exposing (DarkOrLight(..), boolToDarkOrLight, darkModeToString, stringToDarkOrLight, themes)
 import Tutorial.Tutorial exposing (getTutorialBoard, isTutorialMoveValid)
 import Tutorial.Types exposing (TutorialStep(..))
 import Tutorial.View exposing (viewTutorialCell)
@@ -31,7 +34,8 @@ import Url
 
 
 app =
-    Lamdera.frontend
+    Effect.Lamdera.frontend
+        Lamdera.sendToBackend
         { init = init
         , onUrlRequest = UrlClicked
         , onUrlChange = UrlChanged
@@ -42,7 +46,7 @@ app =
         }
 
 
-init : Url.Url -> Nav.Key -> ( FrontendModel, Cmd FrontendMsg )
+init : Url.Url -> Key -> ( FrontendModel, Command FrontendOnly ToBackend FrontendMsg )
 init url key =
     ( { key = key
       , board = initialBoard X
@@ -60,7 +64,7 @@ init url key =
       , dragOffset = { x = 0, y = 0 }
       , debuggerSize = { width = 300, height = 200 }
       , isResizingDebugger = False
-      , localStorageValues = Dict.empty
+      , localStorage = Nothing
       , selectedDifficulty = Nothing
       , onlinePlayer = Nothing
       , showAbandonConfirm = False
@@ -73,9 +77,9 @@ init url key =
       , t = translations EN
       , c = Theme.themes Dark
       }
-    , Cmd.batch
-        [ getLocalStorageValue_ "language"
-        , getLocalStorageValue_ "darkMode"
+    , Command.batch
+        [ Command.sendToJs "getLocalStorageValue" getLocalStorageValue_ (E.string "language")
+        , Command.sendToJs "getLocalStorageValue" getLocalStorageValue_ (E.string "darkMode")
         ]
     )
 
@@ -97,33 +101,33 @@ emptySmallBoard =
     }
 
 
-update : FrontendMsg -> FrontendModel -> ( FrontendModel, Cmd FrontendMsg )
+update : FrontendMsg -> FrontendModel -> ( FrontendModel, Command FrontendOnly ToBackend FrontendMsg )
 update msg model =
     case msg of
         UrlClicked urlRequest ->
             case urlRequest of
-                Internal url ->
+                Browser.Internal url ->
                     ( model
                     , Nav.pushUrl model.key (Url.toString url)
                     )
 
-                External url ->
+                Browser.External url ->
                     ( model
                     , Nav.load url
                     )
 
         UrlChanged url ->
-            ( model, Cmd.none )
+            ( model, Command.none )
 
         CellClicked boardIndex cellIndex ->
             if model.currentMoveIndex < List.length model.moveHistory - 1 then
-                ( model, Cmd.none )
+                ( model, Command.none )
 
             else
                 case model.route of
                     Game (WithBot difficulty) ->
                         if model.board.currentPlayer == O then
-                            ( model, Cmd.none )
+                            ( model, Command.none )
 
                         else
                             let
@@ -132,7 +136,7 @@ update msg model =
                             in
                             if updatedModel.board.winner == Nothing then
                                 ( { updatedModel | botThinking = True }
-                                , Cmd.batch [ cmd, Task.perform (always BotMove) (Process.sleep 500) ]
+                                , Command.batch [ cmd, Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 500)) ]
                                 )
 
                             else
@@ -149,12 +153,12 @@ update msg model =
                                         handlePlayerMove model boardIndex cellIndex
 
                                     else
-                                        ( model, Cmd.none )
+                                        ( model, Command.none )
                                 )
-                            |> Maybe.withDefault ( model, Cmd.none )
+                            |> Maybe.withDefault ( model, Command.none )
 
                     Home ->
-                        ( model, Cmd.none )
+                        ( model, Command.none )
 
         BotMove ->
             case model.route of
@@ -195,21 +199,21 @@ update msg model =
                                         )
 
                                     Nothing ->
-                                        ( { model | botThinking = False }, Cmd.none )
+                                        ( { model | botThinking = False }, Command.none )
                         in
                         ( newModel, cmd )
 
                     else
-                        ( model, Cmd.none )
+                        ( model, Command.none )
 
                 Game WithFriend ->
-                    ( model, Cmd.none )
+                    ( model, Command.none )
 
                 Game OnlineGame ->
-                    ( model, Cmd.none )
+                    ( model, Command.none )
 
                 Home ->
-                    ( model, Cmd.none )
+                    ( model, Command.none )
 
         RestartGame ->
             ( { model
@@ -217,7 +221,7 @@ update msg model =
                 , moveHistory = []
                 , currentMoveIndex = -1
               }
-            , Cmd.none
+            , Command.none
             )
 
         StartGameWithFriend ->
@@ -228,17 +232,17 @@ update msg model =
                 , currentMoveIndex = -1
                 , gameResult = Ongoing
               }
-            , Cmd.none
+            , Command.none
             )
 
         StartGameWithBot ->
-            ( { model | botDifficultyMenuOpen = True }, Cmd.none )
+            ( { model | botDifficultyMenuOpen = True }, Command.none )
 
         SelectBotDifficulty difficulty ->
             ( { model
                 | selectedDifficulty = Just difficulty
               }
-            , Cmd.none
+            , Command.none
             )
 
         StartWithPlayer humanStarts ->
@@ -255,10 +259,10 @@ update msg model =
 
                 cmd =
                     if not humanStarts then
-                        Task.perform (always BotMove) (Process.sleep 500)
+                        Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 500))
 
                     else
-                        Cmd.none
+                        Command.none
             in
             case model.route of
                 Game (WithBot _) ->
@@ -291,18 +295,18 @@ update msg model =
                             )
 
                         Nothing ->
-                            ( model, Cmd.none )
+                            ( model, Command.none )
 
         ReturnToMenu ->
             ( { model
                 | route = Home
                 , gameResult = Ongoing
               }
-            , Cmd.none
+            , Command.none
             )
 
         CancelBotDifficulty ->
-            ( { model | botDifficultyMenuOpen = False }, Cmd.none )
+            ( { model | botDifficultyMenuOpen = False }, Command.none )
 
         PlayForMe ->
             case model.route of
@@ -321,42 +325,49 @@ update msg model =
                                         in
                                         if modelAfterMove.board.winner == Nothing then
                                             ( { modelAfterMove | botThinking = True }
-                                            , Cmd.batch [ moveCmd, Task.perform (always BotMove) (Process.sleep 500) ]
+                                            , Command.batch [ moveCmd, Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 500)) ]
                                             )
 
                                         else
                                             ( modelAfterMove, moveCmd )
 
                                     Nothing ->
-                                        ( model, Cmd.none )
+                                        ( model, Command.none )
                         in
                         ( newModel, cmd )
 
                     else
-                        ( model, Cmd.none )
+                        ( model, Command.none )
 
                 _ ->
-                    ( model, Cmd.none )
+                    ( model, Command.none )
 
         ChangeLanguage lang ->
             let
                 newModel =
                     { model
                         | language = lang
+                        , t = translations lang
                         , frClickCount =
                             if lang == FR then
                                 model.frClickCount + 1
 
                             else
                                 model.frClickCount
-                    }
+                                
+                        }
             in
             ( newModel
-            , storeLocalStorage { key = "language", value = languageToString lang }
+            , Command.sendToJs
+                "storeLocalStorage"
+                storeLocalStorage_
+                (E.object
+                    [ ( "key", E.string "language" ), ( "value", E.string (languageToString lang) ) ]
+                )
             )
 
         CloseDebugger ->
-            ( { model | debuggerVisible = False, frClickCount = 0 }, Cmd.none )
+            ( { model | debuggerVisible = False, frClickCount = 0 }, Command.none )
 
         UndoMove ->
             if model.currentMoveIndex >= 0 then
@@ -371,11 +382,11 @@ update msg model =
                     | currentMoveIndex = newIndex
                     , board = newBoard
                   }
-                , Cmd.none
+                , Command.none
                 )
 
             else
-                ( model, Cmd.none )
+                ( model, Command.none )
 
         RedoMove ->
             if model.currentMoveIndex < List.length model.moveHistory - 1 then
@@ -390,11 +401,11 @@ update msg model =
                     | currentMoveIndex = newIndex
                     , board = newBoard
                   }
-                , Cmd.none
+                , Command.none
                 )
 
             else
-                ( model, Cmd.none )
+                ( model, Command.none )
 
         ToggleDarkMode ->
             let
@@ -409,20 +420,38 @@ update msg model =
                 | darkMode = newDarkMode
                 , c = Theme.themes newDarkMode
               }
-            , storeLocalStorage { key = "darkMode", value = darkModeToString newDarkMode }
+            , Command.sendToJs
+                "storeLocalStorage"
+                storeLocalStorage_
+                (E.object
+                    [ ( "key", E.string "darkMode" ), ( "value", E.string (darkModeToString newDarkMode) ) ]
+                )
             )
 
         ToggleDebugMode ->
-            ( model, Cmd.none )
+            ( model, Command.none )
 
-        ReceivedLocalStorage { language, darkMode } ->
+        ReceivedLocalStorage json ->
+            let
+                language =
+                    json
+                        |> D.decodeValue (D.field "language" D.string)
+                        |> Result.map stringToLanguage
+                        |> Result.withDefault EN
+
+                darkMode =
+                    json
+                        |> D.decodeValue (D.field "darkMode" D.string)
+                        |> Result.map stringToDarkOrLight
+                        |> Result.withDefault Dark
+            in
             ( { model
-                | language = stringToLanguage language
-                , darkMode = stringToDarkOrLight darkMode
-                , t = language |> stringToLanguage |> translations
+                | language = language
+                , darkMode = darkMode
+                , t = language |> translations
                 , c = themes model.darkMode
               }
-            , Cmd.none
+            , Command.none
             )
 
         StartDraggingDebugger mouseX mouseY ->
@@ -433,11 +462,11 @@ update msg model =
                     , y = mouseY - model.debuggerPosition.y
                     }
               }
-            , Cmd.none
+            , Command.none
             )
 
         StopDraggingDebugger ->
-            ( { model | isDraggingDebugger = False }, Cmd.none )
+            ( { model | isDraggingDebugger = False }, Command.none )
 
         DragDebugger mouseX mouseY ->
             if model.isDraggingDebugger then
@@ -447,17 +476,17 @@ update msg model =
                         , y = mouseY - model.dragOffset.y
                         }
                   }
-                , Cmd.none
+                , Command.none
                 )
 
             else
-                ( model, Cmd.none )
+                ( model, Command.none )
 
         StartResizingDebugger ->
-            ( { model | isResizingDebugger = True }, Cmd.none )
+            ( { model | isResizingDebugger = True }, Command.none )
 
         StopResizingDebugger ->
-            ( { model | isResizingDebugger = False }, Cmd.none )
+            ( { model | isResizingDebugger = False }, Command.none )
 
         ResizeDebugger mouseX mouseY ->
             if model.isResizingDebugger then
@@ -480,40 +509,61 @@ update msg model =
                         , height = constrainedHeight
                         }
                   }
-                , Cmd.none
+                , Command.none
                 )
 
             else
-                ( model, Cmd.none )
+                ( model, Command.none )
 
         NoOp ->
-            ( model, Cmd.none )
+            ( model, Command.none )
 
-        ReceivedLocalStorageValue key value ->
-            ( { model | localStorageValues = Dict.insert key value model.localStorageValues }
-            , Cmd.none
-            )
+        ReceivedLocalStorageValue value_ ->
+            let
+                decodedValue =
+                    D.decodeValue D.string value_
+                        |> Result.map
+                            (\str ->
+                                case D.decodeString localStorageValueDecoder str of
+                                    Ok { key, value } ->
+                                        case key of
+                                            "language" ->
+                                                { model | language = stringToLanguage value, t = translations (stringToLanguage value) }
+                                            
+                                            "darkMode" ->
+                                                { model | darkMode = stringToDarkOrLight value, c = themes (stringToDarkOrLight value) }
+                                            
+                                            _ ->
+                                                model
+                                    
+                                    Err _ ->
+                                        model
+                            )
+                            |> Debug.log "decodedValue"
+                        |> Result.withDefault model
+            in
+            ( decodedValue, Command.none )
 
         ToggleRulesModal ->
-            ( { model | rulesModalVisible = not model.rulesModalVisible }, Cmd.none )
+            ( { model | rulesModalVisible = not model.rulesModalVisible }, Command.none )
 
         StartOnlineGame ->
             ( { model | inMatchmaking = True }
-            , Lamdera.sendToBackend JoinMatchmaking
+            , Effect.Lamdera.sendToBackend JoinMatchmaking
             )
 
         LeaveMatchmaking ->
             ( { model | inMatchmaking = False }
-            , Lamdera.sendToBackend LeaveMatchmakingToBackend
+            , Effect.Lamdera.sendToBackend LeaveMatchmakingToBackend
             )
 
         StartWithRandomPlayer ->
-            ( model, Task.perform GotTime Time.now )
+            ( model, Effect.Task.perform GotTime Effect.Time.now )
 
         GotTime time ->
             let
                 randomValue =
-                    modBy 2 (Time.posixToMillis time)
+                    modBy 2 (Effect.Time.posixToMillis time)
 
                 humanStarts =
                     randomValue == 0
@@ -530,10 +580,10 @@ update msg model =
 
                 cmd =
                     if not humanStarts then
-                        Task.perform (always BotMove) (Process.sleep 500)
+                        Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 500))
 
                     else
-                        Cmd.none
+                        Command.none
             in
             case model.route of
                 Game (WithBot _) ->
@@ -566,16 +616,16 @@ update msg model =
                             )
 
                         Nothing ->
-                            ( model, Cmd.none )
+                            ( model, Command.none )
 
         Tick newTime ->
-            ( model, Cmd.none )
+            ( model, Command.none )
 
         ShowAbandonConfirm ->
-            ( { model | showAbandonConfirm = True }, Cmd.none )
+            ( { model | showAbandonConfirm = True }, Command.none )
 
         HideAbandonConfirm ->
-            ( { model | showAbandonConfirm = False }, Cmd.none )
+            ( { model | showAbandonConfirm = False }, Command.none )
 
         ConfirmAbandon ->
             ( { model
@@ -587,7 +637,7 @@ update msg model =
                 , currentMoveIndex = -1
                 , gameResult = Lost
               }
-            , Lamdera.sendToBackend AbandonGame
+            , Effect.Lamdera.sendToBackend AbandonGame
             )
 
         StartTutorial ->
@@ -600,7 +650,7 @@ update msg model =
                 , gameResult = Ongoing
                 , rulesModalVisible = False
               }
-            , Cmd.none
+            , Command.none
             )
 
         NextTutorialStep ->
@@ -634,11 +684,11 @@ update msg model =
                                 Nothing ->
                                     initialBoard X
                       }
-                    , Cmd.none
+                    , Command.none
                     )
 
                 _ ->
-                    ( model, Cmd.none )
+                    ( model, Command.none )
 
         CompleteTutorial ->
             ( { model
@@ -646,11 +696,11 @@ update msg model =
                 , route = Home
                 , board = initialBoard X
               }
-            , Cmd.none
+            , Command.none
             )
 
 
-handlePlayerMove : FrontendModel -> Int -> Int -> ( FrontendModel, Cmd FrontendMsg )
+handlePlayerMove : FrontendModel -> Int -> Int -> ( FrontendModel, Command FrontendOnly ToBackend FrontendMsg )
 handlePlayerMove model boardIndex cellIndex =
     let
         canPlayInBoard =
@@ -853,32 +903,32 @@ handlePlayerMove model boardIndex cellIndex =
             Game (WithBot difficulty) ->
                 if model.board.currentPlayer == X then
                     ( updatedModel
-                    , Process.sleep 500
-                        |> Task.perform (\_ -> BotMove)
+                    , Effect.Process.sleep (Duration.milliseconds 500)
+                        |> Effect.Task.perform (\_ -> BotMove)
                     )
 
                 else
-                    ( updatedModel, Cmd.none )
+                    ( updatedModel, Command.none )
 
             Game OnlineGame ->
                 case model.onlinePlayer of
                     Just player ->
                         if player == model.board.currentPlayer then
                             ( updatedModel
-                            , Lamdera.sendToBackend (MakeMove boardIndex cellIndex player)
+                            , Effect.Lamdera.sendToBackend (MakeMove boardIndex cellIndex player)
                             )
 
                         else
-                            ( model, Cmd.none )
+                            ( model, Command.none )
 
                     Nothing ->
-                        ( model, Cmd.none )
+                        ( model, Command.none )
 
             _ ->
-                ( updatedModel, Cmd.none )
+                ( updatedModel, Command.none )
 
     else
-        ( model, Cmd.none )
+        ( model, Command.none )
 
 
 hasWinningPattern : List a -> a -> Bool
@@ -1387,11 +1437,11 @@ checkBigBoardWinner boards =
         |> List.head
 
 
-updateFromBackend : ToFrontend -> FrontendModel -> ( FrontendModel, Cmd FrontendMsg )
+updateFromBackend : ToFrontend -> FrontendModel -> ( FrontendModel, Command restriction toMsg FrontendMsg )
 updateFromBackend msg model =
     case msg of
         NoOpToFrontend ->
-            ( model, Cmd.none )
+            ( model, Command.none )
 
         GameFound data ->
             ( { model
@@ -1404,7 +1454,7 @@ updateFromBackend msg model =
                 , currentMoveIndex = -1
                 , gameResult = Ongoing
               }
-            , Cmd.none
+            , Command.none
             )
 
         OpponentMove move ->
@@ -1445,7 +1495,7 @@ updateFromBackend msg model =
                 , currentMoveIndex = newIndex
                 , gameResult = newGameResult
               }
-            , Cmd.none
+            , Command.none
             )
 
         OpponentLeft ->
@@ -1454,7 +1504,7 @@ updateFromBackend msg model =
                 , onlinePlayer = Nothing
                 , gameResult = Won
               }
-            , Cmd.none
+            , Command.none
             )
 
 
@@ -1570,80 +1620,77 @@ viewHome ({ t, c } as model) =
         , style "background-color" c.background
         , style "color" c.text
         ]
-        [ h1
-            [ style "margin" "0 0 20px 0"
-            , style "color" c.text
-            , style "font-size" "1.5em"
-            ]
-            [ text t.welcome ]
-        , p
-            [ style "color" c.text
-            , style "margin-bottom" "30px"
-            , style "line-height" "1.6"
-            , style "font-size" "0.7em"
-            ]
-            [ text t.description ]
-        , div
-            [ style "display" "flex"
-            , style "flex-direction" "column"
-            , style "align-items" "center"
-            , style "gap" "15px"
-            ]
-            [ viewGameButton model t.playWithFriend StartGameWithFriend
-            , if model.botDifficultyMenuOpen then
-                viewBotDifficultyMenu model
-
-              else
-                viewGameButton model t.playWithBot StartGameWithBot
-            , viewGameButton model t.rulesTitle ToggleRulesModal
-            , button
-                [ class "menu-button"
-                , onClick
-                    (if model.inMatchmaking then
-                        LeaveMatchmaking
-
-                     else
-                        StartOnlineGame
-                    )
-                , style "padding" "15px 20px"
-                , style "font-size" "0.8em"
-                , style "font-family" "inherit"
-                , style "background-color" c.secondaryBackground
-                , style "color" "white"
-                , style "border" "none"
-                , style "border-radius" "10px"
-                , style "cursor" "pointer"
-                , style "transition" "all 0.2s ease"
-                , style "box-shadow" "0 4px 6px rgba(0, 0, 0, 0.2)"
-                , style "margin" "10px"
-                , style "width" "100%"
-                , style "max-width" "300px"
-                , style "opacity"
-                    (if model.inMatchmaking then
-                        "0.7"
-
-                     else
-                        "1"
-                    )
-                ]
-                [ if model.inMatchmaking then
-                    div
-                        [ style "display" "flex"
-                        , style "align-items" "center"
-                        , style "justify-content" "center"
-                        , style "gap" "8px"
+        [ if model.botDifficultyMenuOpen then
+            viewBotDifficultyMenu model
+          else
+            div []
+                [ h1
+                    [ style "margin" "0 0 20px 0"
+                    , style "color" c.text
+                    , style "font-size" "1.5em"
+                    ]
+                    [ text t.welcome ]
+                , p
+                    [ style "color" c.text
+                    , style "margin-bottom" "30px"
+                    , style "line-height" "1.6"
+                    , style "font-size" "0.7em"
+                    ]
+                    [ text t.description ]
+                , div
+                    [ style "display" "flex"
+                    , style "flex-direction" "column"
+                    , style "align-items" "center"
+                    , style "gap" "15px"
+                    ]
+                    [ viewGameButton model t.playWithFriend StartGameWithFriend
+                    , viewGameButton model t.playWithBot StartGameWithBot
+                    , viewGameButton model t.rulesTitle ToggleRulesModal
+                    , button
+                        [ class "menu-button"
+                        , onClick
+                            (if model.inMatchmaking then
+                                LeaveMatchmaking
+                             else
+                                StartOnlineGame
+                            )
+                        , style "padding" "15px 20px"
+                        , style "font-size" "0.8em"
+                        , style "font-family" "inherit"
+                        , style "background-color" c.secondaryBackground
+                        , style "color" "white"
+                        , style "border" "none"
+                        , style "border-radius" "10px"
+                        , style "cursor" "pointer"
+                        , style "transition" "all 0.2s ease"
+                        , style "box-shadow" "0 4px 6px rgba(0, 0, 0, 0.2)"
+                        , style "margin" "10px"
+                        , style "width" "100%"
+                        , style "max-width" "300px"
+                        , style "opacity"
+                            (if model.inMatchmaking then
+                                "0.7"
+                             else
+                                "1"
+                            )
                         ]
-                        [ text t.searching
-                        , viewThinkingIndicator
+                        [ if model.inMatchmaking then
+                            div
+                                [ style "display" "flex"
+                                , style "align-items" "center"
+                                , style "justify-content" "center"
+                                , style "gap" "8px"
+                                ]
+                                [ text t.searching
+                                , viewThinkingIndicator
+                                ]
+                          else
+                            text t.playOnline
                         ]
-
-                  else
-                    text t.playOnline
+                    ]
                 ]
-            ]
         , if model.rulesModalVisible then
             viewRulesModal model
-
           else
             text ""
         ]
@@ -2266,6 +2313,7 @@ viewLanguageButton label lang isActive isDark =
         [ text label ]
 
 
+
 viewBigBoard : FrontendModel -> Html FrontendMsg
 viewBigBoard ({ c } as model) =
     let
@@ -2485,6 +2533,8 @@ viewSmallBoard ({ c } as model) boardIndex smallBoardData =
         cellElements
 
 
+
+
 viewCell : FrontendModel -> Int -> Bool -> List (Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
 viewCell ({ c } as model) boardIndex isClickable cellStyles cellIndex cellState =
     case model.tutorialState of
@@ -2619,74 +2669,75 @@ viewCell ({ c } as model) boardIndex isClickable cellStyles cellIndex cellState 
                 [ symbol ]
 
 
-subscriptions : FrontendModel -> Sub FrontendMsg
-subscriptions model =
-    Sub.batch
-        [ receiveLocalStorage ReceivedLocalStorage
-        , receiveLocalStorageValue_
-            (\jsonStr ->
-                case D.decodeString localStorageValueDecoder jsonStr of
-                    Ok { key, value } ->
-                        ReceivedLocalStorageValue key value
 
-                    Err _ ->
-                        NoOp
-            )
+--Subscription.fromJs : String -> ((Json.Decode.Value -> msg) -> Sub msg) -> (Json.Decode.Value -> msg) -> Subscription FrontendOnly msg
+
+
+subscriptions : FrontendModel -> Subscription FrontendOnly FrontendMsg
+subscriptions model =
+    Subscription.batch
+        [ receiveLocalStorage ReceivedLocalStorage
+        , Subscription.fromJs "receiveLocalStorageValue_"
+            receiveLocalStorageValue_
+            ReceivedLocalStorageValue
         , if model.isDraggingDebugger then
-            Sub.batch
-                [ Browser.Events.onMouseMove
+            Subscription.batch
+                [ Effect.Browser.Events.onMouseMove
                     (D.map2 DragDebugger
                         (D.field "clientX" D.float)
                         (D.field "clientY" D.float)
                     )
-                , Browser.Events.onMouseUp
+                , Effect.Browser.Events.onMouseUp
                     (D.succeed StopDraggingDebugger)
                 ]
 
           else if model.isResizingDebugger then
-            Sub.batch
-                [ Browser.Events.onMouseMove
+            Subscription.batch
+                [ Effect.Browser.Events.onMouseMove
                     (D.map2 ResizeDebugger
                         (D.field "clientX" D.float)
                         (D.field "clientY" D.float)
                     )
-                , Browser.Events.onMouseUp
+                , Effect.Browser.Events.onMouseUp
                     (D.succeed StopResizingDebugger)
                 ]
 
           else
-            Sub.none
+            Subscription.none
         ]
 
 
-storeLocalStorage : { key : String, value : String } -> Cmd msg
+storeLocalStorage : { key : String, value : String } -> Cmd FrontendMsg
 storeLocalStorage { key, value } =
-    let
-        json =
-            E.object
-                [ ( "key", E.string key )
-                , ( "value", E.string value )
-                ]
-    in
-    storeLocalStorage_ (E.encode 0 json)
-
-
-receiveLocalStorage : ({ language : String, darkMode : Bool } -> msg) -> Sub msg
-receiveLocalStorage toMsg =
-    receiveLocalStorage_
-        (\jsonStr ->
-            case D.decodeString storageDecoder jsonStr of
-                Ok data ->
-                    toMsg data
-
-                Err _ ->
-                    toMsg { language = "FR", darkMode = False }
+    storeLocalStorage_
+        (E.object
+            [ ( "key", E.string key )
+            , ( "value", E.string value )
+            ]
         )
 
 
-storageDecoder : D.Decoder { language : String, darkMode : Bool }
-storageDecoder =
-    D.map2 (\lang dark -> { language = lang, darkMode = dark })
+
+-- copyToClipboard : (Json.Decode.value -> msg) -> Subscription FrontendOnly msg
+-- copyToClipboard msg =
+--     Subscription.fromJs "scrollEventPort" scrollEventPort msg
+
+
+receiveLocalStorage : (D.Value -> msg) -> Subscription FrontendOnly msg
+receiveLocalStorage msg =
+    Subscription.fromJs "receiveLocalStorage_"
+        receiveLocalStorage_
+        msg
+
+
+localStorageDecoder : D.Decoder LocalStorage
+localStorageDecoder =
+    D.map2
+        (\lang dark ->
+            { language = stringToLanguage lang
+            , darkMode = boolToDarkOrLight dark
+            }
+        )
         (D.field "language" D.string)
         (D.field "darkMode" D.bool)
 

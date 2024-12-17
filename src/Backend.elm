@@ -1,15 +1,21 @@
 module Backend exposing (..)
 
-import Lamdera exposing (ClientId, SessionId, broadcast, sendToFrontend)
+import Effect.Command as Command exposing (Command)
+import Effect.Lamdera exposing (ClientId, SessionId, broadcast, sendToFrontend)
+import Effect.Subscription as Subscription exposing (Subscription)
+import Effect.Task
+import Effect.Time
 import List.Extra
 import Random
-import Task
-import Time
 import Types exposing (..)
+import Effect.Command exposing (BackendOnly)
+import Lamdera
 
 
 app =
-    Lamdera.backend
+    Effect.Lamdera.backend
+        Lamdera.broadcast
+        Lamdera.sendToFrontend
         { init = init
         , update = update
         , updateFromFrontend = updateFromFrontend
@@ -17,38 +23,38 @@ app =
         }
 
 
-subscriptions : BackendModel -> Sub BackendMsg
+subscriptions : BackendModel -> Subscription BackendOnly BackendMsg
 subscriptions _ =
-    Lamdera.onDisconnect PlayerDisconnected
+    Effect.Lamdera.onDisconnect PlayerDisconnected
 
 
-init : ( BackendModel, Cmd BackendMsg )
+init : ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
 init =
     ( { message = "Hello!"
       , matchmakingQueue = []
       , activeGames = []
       , seed = Random.initialSeed 0
       }
-    , Task.perform GotInitialTime Time.now
+    , Effect.Task.perform GotInitialTime Effect.Time.now
     )
 
 
-update : BackendMsg -> BackendModel -> ( BackendModel, Cmd BackendMsg )
+update : BackendMsg -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
 update msg model =
     case msg of
         NoOpBackendMsg ->
-            ( model, Cmd.none )
+            ( model, Command.none )
 
         GotInitialTime time ->
-            ( { model | seed = Random.initialSeed (Time.posixToMillis time) }
-            , Cmd.none
+            ( { model | seed = Random.initialSeed (Effect.Time.posixToMillis time) }
+            , Command.none
             )
 
         PlayerDisconnected _ clientId ->
             handleGameAbandon clientId { model | matchmakingQueue = List.filter ((/=) clientId) model.matchmakingQueue }
 
 
-handleGameAbandon : ClientId -> BackendModel -> ( BackendModel, Cmd BackendMsg )
+handleGameAbandon : ClientId -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
 handleGameAbandon clientId model =
     let
         findGame =
@@ -77,22 +83,22 @@ handleGameAbandon clientId model =
                         model.activeGames
             in
             ( { model | activeGames = updatedGames }
-            , sendToFrontend opponent OpponentLeft
+            , Effect.Lamdera.sendToFrontend opponent OpponentLeft
             )
 
         Nothing ->
-            ( model, Cmd.none )
+            ( model, Command.none )
 
 
-updateFromFrontend : SessionId -> ClientId -> ToBackend -> BackendModel -> ( BackendModel, Cmd BackendMsg )
+updateFromFrontend : SessionId -> ClientId -> ToBackend -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
 updateFromFrontend sessionId clientId msg model =
     case msg of
         NoOpToBackend ->
-            ( model, Cmd.none )
+            ( model, Command.none )
 
         JoinMatchmaking ->
             if List.member clientId model.matchmakingQueue then
-                ( model, Cmd.none )
+                ( model, Command.none )
 
             else
                 let
@@ -128,20 +134,20 @@ updateFromFrontend sessionId clientId msg model =
                                 }
                         in
                         ( newModel
-                        , Cmd.batch
-                            [ sendToFrontend secondPlayer (GameFound { opponentId = firstPlayer, playerRole = O })
-                            , sendToFrontend firstPlayer (GameFound { opponentId = secondPlayer, playerRole = X })
+                        , Command.batch
+                            [ Effect.Lamdera.sendToFrontend secondPlayer (GameFound { opponentId = firstPlayer, playerRole = O })
+                            , Effect.Lamdera.sendToFrontend firstPlayer (GameFound { opponentId = secondPlayer, playerRole = X })
                             ]
                         )
 
                     _ ->
                         ( { model | matchmakingQueue = newQueue }
-                        , Cmd.none
+                        , Command.none
                         )
 
         LeaveMatchmakingToBackend ->
             ( { model | matchmakingQueue = List.filter ((/=) clientId) model.matchmakingQueue }
-            , Cmd.none
+            , Command.none
             )
 
         AbandonGame ->
@@ -168,8 +174,8 @@ updateFromFrontend sessionId clientId msg model =
                                 player1
                     in
                     ( model
-                    , sendToFrontend opponent (OpponentMove { boardIndex = boardIndex, cellIndex = cellIndex, player = player })
+                    , Effect.Lamdera.sendToFrontend opponent (OpponentMove { boardIndex = boardIndex, cellIndex = cellIndex, player = player })
                     )
 
                 Nothing ->
-                    ( model, Cmd.none )
+                    ( model, Command.none )

@@ -101,7 +101,7 @@ view ({ c } as model) =
             , style "width" (String.fromFloat model.debuggerSize.width ++ "px")
             , style "height" (String.fromFloat model.debuggerSize.height ++ "px")
             , style "padding" "15px"
-            , style "background-color" c.secondaryBackground
+            , style "background-color" c.tertiaryBackground
             , style "color" c.text
             , style "border-radius" "10px"
             , style "font-family" "monospace"
@@ -165,9 +165,7 @@ view ({ c } as model) =
                 , style "padding-right" "10px"
                 ]
                 [ text "Local Storage:\n"
-                , Dict.toList model.localStorageValues
-                    |> List.map (\( key, value ) -> text <| key ++ ": " ++ value ++ "\n")
-                    |> div []
+                , model.localStorage |> Maybe.map localStorageToString |> Maybe.withDefault "" |> text
                 , text "\nModel State:\n"
                 , text <| "language: " ++ languageToString model.language ++ "\n"
                 , text <| "darkMode: " ++ darkModeToString model.darkMode ++ "\n\n"

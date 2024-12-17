@@ -1,33 +1,35 @@
 port module Types exposing (..)
 
-import Browser exposing (UrlRequest)
-import Browser.Navigation exposing (Key)
 import Dict exposing (Dict)
+import Browser exposing (UrlRequest)
+import Effect.Browser.Navigation exposing (Key)
+import Effect.Lamdera exposing (ClientId)
+import Effect.Time
 import I18n exposing (Language(..), Translation)
 import Json.Decode as D
 import Json.Encode as E
-import Lamdera exposing (ClientId)
 import Random
 import Theme exposing (DarkOrLight(..), Theme)
-import Time
 import Tutorial.Types exposing (TutorialStep)
 import Url exposing (Url)
+import I18n exposing (languageToString)
+import Theme exposing (darkModeToString)
 
 
 
 -- PORTS
 
 
-port storeLocalStorage_ : String -> Cmd msg
+port storeLocalStorage_ : E.Value -> Cmd msg
 
 
-port receiveLocalStorage_ : (String -> msg) -> Sub msg
+port receiveLocalStorage_ : (D.Value -> msg) -> Sub msg
 
 
-port getLocalStorageValue_ : String -> Cmd msg
+port getLocalStorageValue_ : D.Value -> Cmd msg
 
 
-port receiveLocalStorageValue_ : (String -> msg) -> Sub msg
+port receiveLocalStorageValue_ : (D.Value -> msg) -> Sub msg
 
 
 type Player
@@ -88,7 +90,7 @@ type GameResult
 
 
 type alias FrontendModel =
-    { key : Key
+    { key : Effect.Browser.Navigation.Key
     , board : BigBoard
     , route : Route
     , language : Language
@@ -104,7 +106,7 @@ type alias FrontendModel =
     , dragOffset : Position
     , debuggerSize : Size
     , isResizingDebugger : Bool
-    , localStorageValues : Dict String String
+    , localStorage : Maybe LocalStorage
     , selectedDifficulty : Maybe BotDifficulty
     , onlinePlayer : Maybe Player
     , showAbandonConfirm : Bool
@@ -128,7 +130,7 @@ type alias BackendModel =
 
 
 type FrontendMsg
-    = UrlClicked UrlRequest
+    = UrlClicked Browser.UrlRequest
     | UrlChanged Url
     | NoOp
     | CellClicked Int Int
@@ -147,19 +149,19 @@ type FrontendMsg
     | RedoMove
     | ToggleDarkMode
     | ToggleDebugMode
-    | ReceivedLocalStorage { language : String, darkMode : Bool }
+    | ReceivedLocalStorage D.Value
     | StartDraggingDebugger Float Float
     | StopDraggingDebugger
     | DragDebugger Float Float
     | StartResizingDebugger
     | StopResizingDebugger
     | ResizeDebugger Float Float
-    | ReceivedLocalStorageValue String String
+    | ReceivedLocalStorageValue D.Value
     | ToggleRulesModal
     | StartOnlineGame
     | StartWithRandomPlayer
-    | GotTime Time.Posix
-    | Tick Time.Posix
+    | GotTime Effect.Time.Posix
+    | Tick Effect.Time.Posix
     | ShowAbandonConfirm
     | HideAbandonConfirm
     | ConfirmAbandon
@@ -167,6 +169,18 @@ type FrontendMsg
     | NextTutorialStep
     | CompleteTutorial
     | LeaveMatchmaking
+
+
+type alias LocalStorage =
+    { language : Language
+    , darkMode : DarkOrLight
+    }
+
+
+localStorageToString : LocalStorage -> String
+localStorageToString localStorage =
+    "language: " ++ languageToString localStorage.language ++ "\n"
+        ++ "darkMode: " ++ darkModeToString localStorage.darkMode ++ "\n"
 
 
 type ToBackend
@@ -179,8 +193,8 @@ type ToBackend
 
 type BackendMsg
     = NoOpBackendMsg
-    | GotInitialTime Time.Posix
-    | PlayerDisconnected Lamdera.SessionId ClientId
+    | GotInitialTime Effect.Time.Posix
+    | PlayerDisconnected Effect.Lamdera.SessionId ClientId
 
 
 type ToFrontend

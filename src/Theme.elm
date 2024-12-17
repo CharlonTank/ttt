@@ -1,4 +1,4 @@
-module Theme exposing (DarkOrLight(..), Theme, darkModeToString, stringToDarkOrLight, themes)
+module Theme exposing (DarkOrLight(..), Theme, darkModeToString, boolToDarkOrLight, themes, stringToDarkOrLight)
 
 import Color
 
@@ -7,6 +7,7 @@ type alias Theme =
     { background : String
     , gradientBackground : String
     , secondaryBackground : String
+    , tertiaryBackground : String
     , text : String
     , primary : String
     , border : String
@@ -34,14 +35,21 @@ darkModeToString darkOrLight =
             "false"
 
 
-stringToDarkOrLight : Bool -> DarkOrLight
-stringToDarkOrLight bool =
+boolToDarkOrLight : Bool -> DarkOrLight
+boolToDarkOrLight bool =
     if bool then
         Dark
 
     else
         Light
 
+stringToDarkOrLight : String -> DarkOrLight
+stringToDarkOrLight string =
+    if string == "true" then
+        Dark
+
+    else
+        Light
 
 themes : DarkOrLight -> Theme
 themes darkOrLight =
@@ -50,6 +58,7 @@ themes darkOrLight =
             { background = Color.darkBackground
             , gradientBackground = Color.darkGradientBackground
             , secondaryBackground = Color.darkSecondaryBackground
+            , tertiaryBackground = Color.darkSecondaryBackground
             , text = Color.darkText
             , primary = Color.primary
             , border = Color.darkBorder
@@ -64,7 +73,8 @@ themes darkOrLight =
         Light ->
             { background = Color.lightBackground
             , gradientBackground = Color.lightGradientBackground
-            , secondaryBackground = Color.lightSecondaryBackground
+            , secondaryBackground = Color.primary
+            , tertiaryBackground = Color.lightSecondaryBackground
             , text = Color.lightText
             , primary = Color.primary
             , border = Color.lightBorder

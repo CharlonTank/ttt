@@ -1,8 +1,7 @@
 exports.init = async function (app) {
     app.ports.storeLocalStorage_.subscribe(function (data) {
         try {
-            const { key, value } = JSON.parse(data);
-            localStorage.setItem(key, value);
+            localStorage.setItem(data.key, data.value);
         } catch (e) {
             console.error('Error storing data in localStorage:', e);
         }
