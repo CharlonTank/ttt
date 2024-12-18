@@ -1,19 +1,17 @@
 port module Types exposing (..)
 
-import Dict exposing (Dict)
 import Browser exposing (UrlRequest)
+import Dict exposing (Dict)
 import Effect.Browser.Navigation exposing (Key)
 import Effect.Lamdera exposing (ClientId)
 import Effect.Time
-import I18n exposing (Language(..), Translation)
+import I18n exposing (Language(..), Translation, languageToString)
 import Json.Decode as D
 import Json.Encode as E
 import Random
-import Theme exposing (DarkOrLight(..), Theme)
+import Theme exposing (DarkOrLight(..), Theme, darkModeToString)
 import Tutorial.Types exposing (TutorialStep)
 import Url exposing (Url)
-import I18n exposing (languageToString)
-import Theme exposing (darkModeToString)
 
 
 
@@ -179,8 +177,12 @@ type alias LocalStorage =
 
 localStorageToString : LocalStorage -> String
 localStorageToString localStorage =
-    "language: " ++ languageToString localStorage.language ++ "\n"
-        ++ "darkMode: " ++ darkModeToString localStorage.darkMode ++ "\n"
+    "language: "
+        ++ languageToString localStorage.language
+        ++ "\n"
+        ++ "darkMode: "
+        ++ darkModeToString localStorage.darkMode
+        ++ "\n"
 
 
 type ToBackend

@@ -1,4 +1,4 @@
-module Theme exposing (DarkOrLight(..), Theme, darkModeToString, boolToDarkOrLight, themes, stringToDarkOrLight)
+module Theme exposing (DarkOrLight(..), Theme, boolToDarkOrLight, darkModeToString, stringToDarkOrLight, themes)
 
 import Color
 
@@ -43,6 +43,7 @@ boolToDarkOrLight bool =
     else
         Light
 
+
 stringToDarkOrLight : String -> DarkOrLight
 stringToDarkOrLight string =
     if string == "true" then
@@ -50,6 +51,7 @@ stringToDarkOrLight string =
 
     else
         Light
+
 
 themes : DarkOrLight -> Theme
 themes darkOrLight =

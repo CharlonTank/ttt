@@ -15,6 +15,18 @@ import Effect.Process
 import Effect.Subscription as Subscription exposing (Subscription)
 import Effect.Task
 import Effect.Time
+import GameLogic
+    exposing
+        ( checkBigBoardWinner
+        , checkWinner
+        , emptySmallBoard
+        , getAllAvailableMoves
+        , initialBoard
+        , isBigBoardComplete
+        , isSmallBoardComplete
+        , isValidMove
+        , makeMove
+        )
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
@@ -87,23 +99,6 @@ init url key =
         , Command.sendToJs "getLocalStorageValue" getLocalStorageValue_ (E.string "darkMode")
         ]
     )
-
-
-initialBoard : Player -> BigBoard
-initialBoard startingPlayer =
-    { boards = List.repeat 9 emptySmallBoard
-    , currentPlayer = startingPlayer
-    , activeBoard = Nothing
-    , winner = Nothing
-    , initialPlayer = startingPlayer
-    }
-
-
-emptySmallBoard : SmallBoard
-emptySmallBoard =
-    { cells = List.repeat 9 Empty
-    , winner = Nothing
-    }
 
 
 update : FrontendMsg -> FrontendModel -> ( FrontendModel, Command FrontendOnly ToBackend FrontendMsg )
@@ -704,6 +699,77 @@ update msg model =
             )
 
 
+updateFromBackend : ToFrontend -> FrontendModel -> ( FrontendModel, Command restriction toMsg FrontendMsg )
+updateFromBackend msg model =
+    case msg of
+        NoOpToFrontend ->
+            ( model, Command.none )
+
+        GameFound data ->
+            ( { model
+                | inMatchmaking = False
+                , onlineOpponent = Just data.opponentId
+                , route = Game OnlineGame
+                , board = initialBoard X
+                , onlinePlayer = Just data.playerRole
+                , moveHistory = []
+                , currentMoveIndex = -1
+                , gameResult = Ongoing
+              }
+            , Command.none
+            )
+
+        OpponentMove move ->
+            let
+                newBoard =
+                    makeMove model.board move.boardIndex move.cellIndex move.player
+
+                newHistory =
+                    List.take (model.currentMoveIndex + 1) model.moveHistory ++ [ move ]
+
+                newIndex =
+                    List.length newHistory - 1
+
+                newGameResult =
+                    case newBoard.winner of
+                        Just winner ->
+                            case model.onlinePlayer of
+                                Just myRole ->
+                                    if myRole == winner then
+                                        Won
+
+                                    else
+                                        Lost
+
+                                Nothing ->
+                                    Ongoing
+
+                        Nothing ->
+                            if isBigBoardComplete newBoard then
+                                Drew
+
+                            else
+                                Ongoing
+            in
+            ( { model
+                | board = newBoard
+                , moveHistory = newHistory
+                , currentMoveIndex = newIndex
+                , gameResult = newGameResult
+              }
+            , Command.none
+            )
+
+        OpponentLeft ->
+            ( { model
+                | onlineOpponent = Nothing
+                , onlinePlayer = Nothing
+                , gameResult = Won
+              }
+            , Command.none
+            )
+
+
 handlePlayerMove : FrontendModel -> Int -> Int -> ( FrontendModel, Command FrontendOnly ToBackend FrontendMsg )
 handlePlayerMove model boardIndex cellIndex =
     let
@@ -935,583 +1001,6 @@ handlePlayerMove model boardIndex cellIndex =
         ( model, Command.none )
 
 
-hasWinningPattern : List a -> a -> Bool
-hasWinningPattern cells player =
-    let
-        winningPatterns =
-            [ [ 0, 1, 2 ]
-            , [ 3, 4, 5 ]
-            , [ 6, 7, 8 ]
-            , [ 0, 3, 6 ]
-            , [ 1, 4, 7 ]
-            , [ 2, 5, 8 ]
-            , [ 0, 4, 8 ]
-            , [ 2, 4, 6 ]
-            ]
-
-        isWinningPattern pattern =
-            List.all
-                (\index ->
-                    List.getAt index cells
-                        |> Maybe.map ((==) player)
-                        |> Maybe.withDefault False
-                )
-                pattern
-    in
-    List.any isWinningPattern winningPatterns
-
-
-findBestMove : BigBoard -> BotDifficulty -> Maybe ( Int, Int )
-findBestMove board difficulty =
-    let
-        availableMoves =
-            getAllAvailableMoves board
-
-        depthForDifficulty =
-            case difficulty of
-                Easy ->
-                    2
-
-                Medium ->
-                    3
-
-                Hard ->
-                    4
-
-                Elite ->
-                    5
-
-        moveScores =
-            List.map
-                (\( boardIdx, cellIdx ) ->
-                    let
-                        newBoard =
-                            makeMove board boardIdx cellIdx board.currentPlayer
-
-                        baseScore =
-                            alphabeta newBoard depthForDifficulty -10000 10000 False
-
-                        randomFactor =
-                            case difficulty of
-                                Easy ->
-                                    modBy 200 (boardIdx * 17 + cellIdx * 13)
-
-                                Medium ->
-                                    modBy 100 (boardIdx * 11 + cellIdx * 7)
-
-                                Hard ->
-                                    modBy 50 (boardIdx * 7 + cellIdx * 5)
-
-                                Elite ->
-                                    modBy 10 (boardIdx * 3 + cellIdx * 2)
-                    in
-                    ( ( boardIdx, cellIdx ), baseScore + randomFactor )
-                )
-                availableMoves
-
-        shouldChooseRandom =
-            case difficulty of
-                Easy ->
-                    modBy 3 (List.length availableMoves) == 0
-
-                Medium ->
-                    modBy 5 (List.length availableMoves) == 0
-
-                Hard ->
-                    modBy 10 (List.length availableMoves) == 0
-
-                Elite ->
-                    modBy 20 (List.length availableMoves) == 0
-
-        bestMove =
-            if shouldChooseRandom then
-                List.getAt (modBy (List.length availableMoves) (List.length moveScores)) availableMoves
-
-            else
-                List.sortBy Tuple.second moveScores
-                    |> List.reverse
-                    |> List.head
-                    |> Maybe.map Tuple.first
-    in
-    bestMove
-
-
-alphabeta : BigBoard -> Int -> Int -> Int -> Bool -> Int
-alphabeta board depth alpha beta isMaximizing =
-    case board.winner of
-        Just winner ->
-            if winner == O then
-                1000 + depth
-
-            else
-                -1000 - depth
-
-        Nothing ->
-            if depth == 0 then
-                evaluatePosition board O
-
-            else if isMaximizing then
-                alphabetaMax board depth alpha beta
-
-            else
-                alphabetaMin board depth alpha beta
-
-
-alphabetaMax : BigBoard -> Int -> Int -> Int -> Int
-alphabetaMax board depth alpha beta =
-    let
-        availableMoves =
-            getAllAvailableMoves board
-
-        helper moves currentAlpha bestScore =
-            case moves of
-                [] ->
-                    bestScore
-
-                ( boardIdx, cellIdx ) :: rest ->
-                    let
-                        newBoard =
-                            makeMove board boardIdx cellIdx board.currentPlayer
-
-                        score =
-                            alphabeta newBoard (depth - 1) currentAlpha beta False
-
-                        newBestScore =
-                            Basics.max bestScore score
-
-                        newAlpha =
-                            Basics.max currentAlpha newBestScore
-                    in
-                    if beta <= newAlpha then
-                        newBestScore
-
-                    else
-                        helper rest newAlpha newBestScore
-    in
-    helper availableMoves alpha -10000
-
-
-alphabetaMin : BigBoard -> Int -> Int -> Int -> Int
-alphabetaMin board depth alpha beta =
-    let
-        availableMoves =
-            getAllAvailableMoves board
-
-        helper moves currentBeta bestScore =
-            case moves of
-                [] ->
-                    bestScore
-
-                ( boardIdx, cellIdx ) :: rest ->
-                    let
-                        newBoard =
-                            makeMove board boardIdx cellIdx board.currentPlayer
-
-                        score =
-                            alphabeta newBoard (depth - 1) alpha currentBeta True
-
-                        newBestScore =
-                            Basics.min bestScore score
-
-                        newBeta =
-                            Basics.min currentBeta newBestScore
-                    in
-                    if newBeta <= alpha then
-                        newBestScore
-
-                    else
-                        helper rest newBeta newBestScore
-    in
-    helper availableMoves beta 10000
-
-
-evaluatePosition : BigBoard -> Player -> Int
-evaluatePosition board forPlayer =
-    let
-        evaluateSmallBoard : SmallBoard -> Int
-        evaluateSmallBoard smallBoard =
-            let
-                evaluateLine : List CellState -> Int
-                evaluateLine line =
-                    let
-                        playerCount =
-                            List.filter (\cell -> cell == Filled forPlayer) line
-                                |> List.length
-
-                        opponentCount =
-                            List.filter
-                                (\cell ->
-                                    case cell of
-                                        Filled p ->
-                                            p /= forPlayer
-
-                                        Empty ->
-                                            False
-                                )
-                                line
-                                |> List.length
-
-                        emptyCount =
-                            List.filter ((==) Empty) line
-                                |> List.length
-                    in
-                    if playerCount == 3 then
-                        100
-
-                    else if opponentCount == 3 then
-                        -100
-
-                    else if playerCount == 2 && emptyCount == 1 then
-                        20
-
-                    else if opponentCount == 2 && emptyCount == 1 then
-                        -20
-
-                    else if playerCount == 1 && emptyCount == 2 then
-                        2
-
-                    else if opponentCount == 1 && emptyCount == 2 then
-                        -2
-
-                    else
-                        0
-
-                rows =
-                    [ List.take 3 smallBoard.cells
-                    , List.take 3 (List.drop 3 smallBoard.cells)
-                    , List.drop 6 smallBoard.cells
-                    ]
-
-                cols =
-                    [ List.map (\i -> List.getAt (i * 3) smallBoard.cells |> Maybe.withDefault Empty) (List.range 0 2)
-                    , List.map (\i -> List.getAt (i * 3 + 1) smallBoard.cells |> Maybe.withDefault Empty) (List.range 0 2)
-                    , List.map (\i -> List.getAt (i * 3 + 2) smallBoard.cells |> Maybe.withDefault Empty) (List.range 0 2)
-                    ]
-
-                diags =
-                    [ List.map (\i -> List.getAt (i * 4) smallBoard.cells |> Maybe.withDefault Empty) (List.range 0 2)
-                    , List.map (\i -> List.getAt (i * 2 + 2) smallBoard.cells |> Maybe.withDefault Empty) (List.range 0 2)
-                    ]
-
-                allLines =
-                    rows ++ cols ++ diags
-            in
-            List.sum (List.map evaluateLine allLines)
-
-        boardScores =
-            List.map evaluateSmallBoard board.boards
-
-        centerBoardBonus =
-            case List.getAt 4 board.boards of
-                Just centerBoard ->
-                    case centerBoard.winner of
-                        Just winner ->
-                            if winner == forPlayer then
-                                200
-
-                            else
-                                -200
-
-                        Nothing ->
-                            let
-                                centerCellBonus =
-                                    case List.getAt 4 centerBoard.cells of
-                                        Just (Filled player) ->
-                                            if player == forPlayer then
-                                                50
-
-                                            else
-                                                -50
-
-                                        _ ->
-                                            0
-                            in
-                            centerCellBonus
-
-                Nothing ->
-                    0
-
-        cornerBoardsBonus =
-            let
-                cornerIndexes =
-                    [ 0, 2, 6, 8 ]
-
-                cornerBoards =
-                    List.filterMap (\i -> List.getAt i board.boards) cornerIndexes
-
-                cornerScore smallBoard =
-                    case smallBoard.winner of
-                        Just winner ->
-                            if winner == forPlayer then
-                                100
-
-                            else
-                                -100
-
-                        Nothing ->
-                            0
-            in
-            List.sum (List.map cornerScore cornerBoards)
-
-        strategicBonus =
-            case board.activeBoard of
-                Just nextBoardIndex ->
-                    if nextBoardIndex == 4 then
-                        -50
-
-                    else if List.member nextBoardIndex [ 0, 2, 6, 8 ] then
-                        -30
-
-                    else
-                        20
-
-                Nothing ->
-                    0
-    in
-    List.sum boardScores + centerBoardBonus + cornerBoardsBonus + strategicBonus
-
-
-getAllAvailableMoves : BigBoard -> List ( Int, Int )
-getAllAvailableMoves board =
-    let
-        validBoardIndexes =
-            case board.activeBoard of
-                Nothing ->
-                    List.range 0 8
-
-                Just idx ->
-                    [ idx ]
-
-        isValidBoardAndCell boardIdx cellIdx =
-            isValidMove board boardIdx cellIdx
-    in
-    List.concatMap
-        (\boardIdx ->
-            List.map (\cellIdx -> ( boardIdx, cellIdx ))
-                (List.range 0 8)
-        )
-        validBoardIndexes
-        |> List.filter (\( boardIdx, cellIdx ) -> isValidBoardAndCell boardIdx cellIdx)
-
-
-isValidMove : BigBoard -> Int -> Int -> Bool
-isValidMove board boardIndex cellIndex =
-    case board.winner of
-        Just _ ->
-            False
-
-        Nothing ->
-            let
-                targetBoard =
-                    List.drop boardIndex board.boards |> List.head |> Maybe.withDefault emptySmallBoard
-
-                targetCell =
-                    List.drop cellIndex targetBoard.cells |> List.head |> Maybe.withDefault Empty
-            in
-            targetBoard.winner == Nothing && targetCell == Empty
-
-
-makeMove : BigBoard -> Int -> Int -> Player -> BigBoard
-makeMove board boardIndex cellIndex player =
-    let
-        updateCell cells index =
-            List.indexedMap
-                (\i cell ->
-                    if i == index then
-                        Filled player
-
-                    else
-                        cell
-                )
-                cells
-
-        updateBoard boards index =
-            List.indexedMap
-                (\i smallBoard ->
-                    if i == index then
-                        let
-                            updatedCells =
-                                updateCell smallBoard.cells cellIndex
-                        in
-                        { smallBoard
-                            | cells = updatedCells
-                            , winner = checkWinner updatedCells
-                        }
-
-                    else
-                        smallBoard
-                )
-                boards
-
-        updatedBoards =
-            updateBoard board.boards boardIndex
-
-        nextPlayer =
-            case player of
-                X ->
-                    O
-
-                O ->
-                    X
-
-        nextActiveBoard =
-            if isSmallBoardComplete (List.drop cellIndex updatedBoards |> List.head |> Maybe.withDefault emptySmallBoard) then
-                Nothing
-
-            else
-                Just cellIndex
-    in
-    { board
-        | boards = updatedBoards
-        , currentPlayer = nextPlayer
-        , activeBoard = nextActiveBoard
-        , winner = checkBigBoardWinner updatedBoards
-    }
-
-
-isSmallBoardComplete : SmallBoard -> Bool
-isSmallBoardComplete board =
-    board.winner /= Nothing || List.all ((/=) Empty) board.cells
-
-
-checkWinner : List CellState -> Maybe Player
-checkWinner cells =
-    let
-        winningCombinations =
-            [ [ 0, 1, 2 ]
-            , [ 3, 4, 5 ]
-            , [ 6, 7, 8 ]
-            , [ 0, 3, 6 ]
-            , [ 1, 4, 7 ]
-            , [ 2, 5, 8 ]
-            , [ 0, 4, 8 ]
-            , [ 2, 4, 6 ]
-            ]
-
-        checkCombination : List Int -> Maybe Player
-        checkCombination indices =
-            case List.map (\i -> List.getAt i cells) indices of
-                [ Just (Filled p1), Just (Filled p2), Just (Filled p3) ] ->
-                    if p1 == p2 && p2 == p3 then
-                        Just p1
-
-                    else
-                        Nothing
-
-                _ ->
-                    Nothing
-    in
-    List.filterMap checkCombination winningCombinations
-        |> List.head
-
-
-checkBigBoardWinner : List SmallBoard -> Maybe Player
-checkBigBoardWinner boards =
-    let
-        boardWinners =
-            List.map .winner boards
-
-        winningCombinations =
-            [ [ 0, 1, 2 ]
-            , [ 3, 4, 5 ]
-            , [ 6, 7, 8 ]
-            , [ 0, 3, 6 ]
-            , [ 1, 4, 7 ]
-            , [ 2, 5, 8 ]
-            , [ 0, 4, 8 ]
-            , [ 2, 4, 6 ]
-            ]
-
-        getWinner index =
-            List.drop index boardWinners |> List.head |> Maybe.withDefault Nothing
-
-        checkCombination indexes =
-            case List.map getWinner indexes of
-                (Just player) :: rest ->
-                    if List.all ((==) (Just player)) rest then
-                        Just player
-
-                    else
-                        Nothing
-
-                _ ->
-                    Nothing
-    in
-    List.filterMap checkCombination winningCombinations
-        |> List.head
-
-
-updateFromBackend : ToFrontend -> FrontendModel -> ( FrontendModel, Command restriction toMsg FrontendMsg )
-updateFromBackend msg model =
-    case msg of
-        NoOpToFrontend ->
-            ( model, Command.none )
-
-        GameFound data ->
-            ( { model
-                | inMatchmaking = False
-                , onlineOpponent = Just data.opponentId
-                , route = Game OnlineGame
-                , board = initialBoard X
-                , onlinePlayer = Just data.playerRole
-                , moveHistory = []
-                , currentMoveIndex = -1
-                , gameResult = Ongoing
-              }
-            , Command.none
-            )
-
-        OpponentMove move ->
-            let
-                newBoard =
-                    makeMove model.board move.boardIndex move.cellIndex move.player
-
-                newHistory =
-                    List.take (model.currentMoveIndex + 1) model.moveHistory ++ [ move ]
-
-                newIndex =
-                    List.length newHistory - 1
-
-                newGameResult =
-                    case newBoard.winner of
-                        Just winner ->
-                            case model.onlinePlayer of
-                                Just myRole ->
-                                    if myRole == winner then
-                                        Won
-
-                                    else
-                                        Lost
-
-                                Nothing ->
-                                    Ongoing
-
-                        Nothing ->
-                            if isBigBoardComplete newBoard then
-                                Drew
-
-                            else
-                                Ongoing
-            in
-            ( { model
-                | board = newBoard
-                , moveHistory = newHistory
-                , currentMoveIndex = newIndex
-                , gameResult = newGameResult
-              }
-            , Command.none
-            )
-
-        OpponentLeft ->
-            ( { model
-                | onlineOpponent = Nothing
-                , onlinePlayer = Nothing
-                , gameResult = Won
-              }
-            , Command.none
-            )
-
-
 view : FrontendModel -> Browser.Document FrontendMsg
 view ({ t, c } as model) =
     { title = t.welcome
@@ -1589,7 +1078,6 @@ view ({ t, c } as model) =
             )
         ]
     }
-
 
 
 viewGameButton : HtmlId -> FrontendModel -> String -> FrontendMsg -> Html FrontendMsg
@@ -1682,7 +1170,14 @@ viewHome ({ t, c } as model) =
                              else
                                 "1"
                             )
-                        , Html.Attributes.id (if model.inMatchmaking then "leave-matchmaking-button" else "start-online-game-button")
+                        , Dom.idToAttribute <|
+                            Dom.id
+                                (if model.inMatchmaking then
+                                    "leave-matchmaking-button"
+
+                                 else
+                                    "start-online-game-button"
+                                )
                         ]
                         [ if model.inMatchmaking then
                             div
@@ -1940,7 +1435,7 @@ viewGame ({ t, c } as model) mode =
                             , style "margin-bottom" "10px"
                             , style "width" "100%"
                             , onClick ReturnToMenu
-                            , Html.Attributes.id "back-to-menu-button"
+                            , Dom.idToAttribute (Dom.id "back-to-menu-button")
                             ]
                             [ text t.backToMenu ]
 
@@ -2049,7 +1544,7 @@ viewBotDifficultyMenu ({ t, c } as model) =
                         , style "cursor" "pointer"
                         , style "font-family" "inherit"
                         , onClick (StartWithPlayer True)
-                        , Html.Attributes.id "human-starts-button"
+                        , Dom.idToAttribute (Dom.id "human-starts-button")
                         ]
                         [ text t.humanStarts ]
                     , button
@@ -2063,7 +1558,7 @@ viewBotDifficultyMenu ({ t, c } as model) =
                         , style "cursor" "pointer"
                         , style "font-family" "inherit"
                         , onClick (StartWithPlayer False)
-                        , Html.Attributes.id "bot-starts-button"
+                        , Dom.idToAttribute (Dom.id "bot-starts-button")
                         ]
                         [ text t.botStarts ]
                     , button
@@ -2077,7 +1572,7 @@ viewBotDifficultyMenu ({ t, c } as model) =
                         , style "cursor" "pointer"
                         , style "font-family" "inherit"
                         , onClick StartWithRandomPlayer
-                        , Html.Attributes.id "random-starts-button"
+                        , Dom.idToAttribute (Dom.id "random-starts-button")
                         ]
                         [ text t.randomStarts ]
                     ]
@@ -2393,7 +1888,6 @@ viewBigBoard ({ c } as model) =
     div
         (boardStyle ++ blinkStyle)
         boardElements
-
 
 
 viewSmallBoard : FrontendModel -> Int -> SmallBoard -> Html FrontendMsg
@@ -2766,7 +2260,7 @@ reconstructBoardFromMoves moves upToIndex initialBoardState =
             List.take (upToIndex + 1) moves
 
         freshBoard =
-            { boards = List.repeat 9 emptySmallBoard
+            { boards = List.repeat 9 GameLogic.emptySmallBoard
             , currentPlayer = initialBoardState.initialPlayer
             , activeBoard = Nothing
             , winner = Nothing
@@ -2775,7 +2269,7 @@ reconstructBoardFromMoves moves upToIndex initialBoardState =
     in
     List.foldl
         (\move board ->
-            makeMove board move.boardIndex move.cellIndex board.currentPlayer
+            GameLogic.makeMove board move.boardIndex move.cellIndex board.currentPlayer
         )
         freshBoard
         movesToApply
@@ -2864,7 +2358,7 @@ shouldEnableNextButton model =
                     let
                         centerBoard =
                             List.getAt 4 model.board.boards
-                                |> Maybe.withDefault emptySmallBoard
+                                |> Maybe.withDefault GameLogic.emptySmallBoard
                     in
                     List.getAt 2 centerBoard.cells == Just (Filled X)
 
@@ -2875,7 +2369,7 @@ shouldEnableNextButton model =
                     let
                         centerBoard =
                             List.getAt 4 model.board.boards
-                                |> Maybe.withDefault emptySmallBoard
+                                |> Maybe.withDefault GameLogic.emptySmallBoard
                     in
                     centerBoard.winner == Just X
 
@@ -3006,11 +2500,6 @@ viewTutorialOverlay ({ t, c } as model) =
             text ""
 
 
-isBigBoardComplete : BigBoard -> Bool
-isBigBoardComplete board =
-    List.all isSmallBoardComplete board.boards
-
-
 viewGameResultModal : FrontendModel -> Html FrontendMsg
 viewGameResultModal ({ t, c } as model) =
     div
@@ -3061,7 +2550,7 @@ viewGameResultModal ({ t, c } as model) =
                 , style "cursor" "pointer"
                 , style "transition" "all 0.2s ease"
                 , onClick ReturnToMenu
-                , Html.Attributes.id "back-to-menu-button"
+                , Dom.idToAttribute (Dom.id "back-to-menu-button")
                 ]
                 [ text t.backToMenu ]
             ]
