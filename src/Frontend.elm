@@ -1591,6 +1591,7 @@ view ({ t, c } as model) =
     }
 
 
+
 viewGameButton : HtmlId -> FrontendModel -> String -> FrontendMsg -> Html FrontendMsg
 viewGameButton htmlId ({ c } as model) label msg =
     button
@@ -1681,6 +1682,7 @@ viewHome ({ t, c } as model) =
                              else
                                 "1"
                             )
+                        , Html.Attributes.id (if model.inMatchmaking then "leave-matchmaking-button" else "start-online-game-button")
                         ]
                         [ if model.inMatchmaking then
                             div
@@ -1938,6 +1940,7 @@ viewGame ({ t, c } as model) mode =
                             , style "margin-bottom" "10px"
                             , style "width" "100%"
                             , onClick ReturnToMenu
+                            , Html.Attributes.id "back-to-menu-button"
                             ]
                             [ text t.backToMenu ]
 
@@ -2046,6 +2049,7 @@ viewBotDifficultyMenu ({ t, c } as model) =
                         , style "cursor" "pointer"
                         , style "font-family" "inherit"
                         , onClick (StartWithPlayer True)
+                        , Html.Attributes.id "human-starts-button"
                         ]
                         [ text t.humanStarts ]
                     , button
@@ -2059,6 +2063,7 @@ viewBotDifficultyMenu ({ t, c } as model) =
                         , style "cursor" "pointer"
                         , style "font-family" "inherit"
                         , onClick (StartWithPlayer False)
+                        , Html.Attributes.id "bot-starts-button"
                         ]
                         [ text t.botStarts ]
                     , button
@@ -2072,6 +2077,7 @@ viewBotDifficultyMenu ({ t, c } as model) =
                         , style "cursor" "pointer"
                         , style "font-family" "inherit"
                         , onClick StartWithRandomPlayer
+                        , Html.Attributes.id "random-starts-button"
                         ]
                         [ text t.randomStarts ]
                     ]
@@ -2389,6 +2395,7 @@ viewBigBoard ({ c } as model) =
         boardElements
 
 
+
 viewSmallBoard : FrontendModel -> Int -> SmallBoard -> Html FrontendMsg
 viewSmallBoard ({ c } as model) boardIndex smallBoardData =
     let
@@ -2682,10 +2689,6 @@ cellId boardIndex cellIndex =
     "cell_" ++ String.fromInt boardIndex ++ "_" ++ String.fromInt cellIndex |> Dom.id
 
 
-
---Subscription.fromJs : String -> ((Json.Decode.Value -> msg) -> Sub msg) -> (Json.Decode.Value -> msg) -> Subscription FrontendOnly msg
-
-
 subscriptions : FrontendModel -> Subscription FrontendOnly FrontendMsg
 subscriptions model =
     Subscription.batch
@@ -2728,12 +2731,6 @@ storeLocalStorage { key, value } =
             , ( "value", E.string value )
             ]
         )
-
-
-
--- copyToClipboard : (Json.Decode.value -> msg) -> Subscription FrontendOnly msg
--- copyToClipboard msg =
---     Subscription.fromJs "scrollEventPort" scrollEventPort msg
 
 
 receiveLocalStorage : (D.Value -> msg) -> Subscription FrontendOnly msg
@@ -3064,6 +3061,7 @@ viewGameResultModal ({ t, c } as model) =
                 , style "cursor" "pointer"
                 , style "transition" "all 0.2s ease"
                 , onClick ReturnToMenu
+                , Html.Attributes.id "back-to-menu-button"
                 ]
                 [ text t.backToMenu ]
             ]
