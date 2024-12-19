@@ -34,6 +34,7 @@ import I18n exposing (Language(..), Translation, languageToString, stringToLangu
 import Json.Decode as D
 import Json.Encode as E
 import Lamdera
+import Lamdera.Json as Json
 import List.Extra as List
 import LocalStorage exposing (LocalStorageUpdate(..), localStorageDecoder)
 import String
@@ -92,8 +93,6 @@ init url key =
       , botThinking = False
       , inMatchmaking = False
       , onlineOpponent = Nothing
-      , t = translations EN
-      , c = Theme.themes Dark
       }
     , LocalStorage.getLocalStorage
     )
@@ -345,7 +344,6 @@ update msg model =
                 newModel =
                     { model
                         | language = lang
-                        , t = translations lang
                         , frClickCount =
                             if lang == FR then
                                 model.frClickCount + 1
@@ -410,7 +408,6 @@ update msg model =
             in
             ( { model
                 | darkMode = newDarkMode
-                , c = Theme.themes newDarkMode
               }
             , LocalStorage.storeValue (DarkModeUpdate newDarkMode)
             )
@@ -418,51 +415,23 @@ update msg model =
         ToggleDebugMode ->
             ( model, Command.none )
 
-        --  D.decodeValue D.string value_
-        --                         |> Result.map
-        --                             (\str ->
-        --                                 case D.decodeString localStorageValueDecoder str of
-        --                                     Ok { key, value } ->
-        --                                         case key of
-        --                                             "language" ->
-        --                                                 { model
-        --                                                     | language = stringToLanguage value |> Ok
-        --                                                     , t = translations (stringToLanguage value)
-        --                                                 }
-        --                                             "darkMode" ->
-        --                                                 { model
-        --                                                     | darkMode = stringToDarkOrLight value |> Ok
-        --                                                     , c = themes (stringToDarkOrLight value)
-        --                                                 }
-        --                                             _ ->
-        --                                                 model
-        --                                     Err _ ->
-        --                                         model
-        --                             )
         ReceivedLocalStorage json ->
-            let
-                _ =
-                    Debug.log "ReceivedLocalStorage" json
-
-                localStorage =
-                    json
-                        |> D.decodeValue (D.field "localStorage" localStorageDecoder)
-                        |> Debug.log "localStoragee"
-            in
-            case localStorage of
-                Ok { language, darkMode } ->
+            -- let
+            --     localStorage =
+            --         json
+            --             |> Json.decodeValue (Json.field "localStorage" localStorageDecoder)
+            -- in
+            case json of
+                { language, darkMode } ->
                     ( { model
                         | language = language
                         , darkMode = darkMode
-                        , t = translations language
-                        , c = themes darkMode
                       }
                     , Command.none
                     )
 
-                Err _ ->
-                    ( model, Command.none )
-
+        -- Err _ ->
+        --     ( model, Command.none )
         StartDraggingDebugger mouseX mouseY ->
             ( { model
                 | isDraggingDebugger = True
@@ -986,7 +955,13 @@ handlePlayerMove model boardIndex cellIndex =
 
 
 view : FrontendModel -> Browser.Document FrontendMsg
-view ({ t, c } as model) =
+view model =
+    let
+        ({ c, t } as userConfig) =
+            { t = translations model.language
+            , c = themes model.darkMode
+            }
+    in
     { title = t.welcome
     , body =
         [ Html.node "link"
@@ -1034,27 +1009,27 @@ view ({ t, c } as model) =
             , style "letter-spacing" "1px"
             , style "line-height" "1.5"
             ]
-            ([ viewLanguageSelector model
+            ([ viewLanguageSelector userConfig model
              , case model.route of
                 Home ->
-                    viewHome model
+                    viewHome userConfig model
 
                 Game mode ->
-                    viewGame model mode
+                    viewGame userConfig model mode
              ]
-                ++ Debugger.view model
+                ++ Debugger.view userConfig model
                 ++ [ if model.gameResult /= Ongoing then
-                        viewGameResultModal model
+                        viewGameResultModal userConfig model
 
                      else
                         text ""
                    , if model.rulesModalVisible then
-                        viewRulesModal model
+                        viewRulesModal userConfig model
 
                      else
                         text ""
                    , if model.tutorialState /= Nothing then
-                        viewTutorialOverlay model
+                        viewTutorialOverlay userConfig model
 
                      else
                         text ""
@@ -1064,8 +1039,8 @@ view ({ t, c } as model) =
     }
 
 
-viewGameButton : HtmlId -> FrontendModel -> String -> FrontendMsg -> Html FrontendMsg
-viewGameButton htmlId ({ c } as model) label msg =
+viewGameButton : UserConfig -> HtmlId -> String -> FrontendMsg -> Html FrontendMsg
+viewGameButton { c } htmlId label msg =
     button
         [ style "padding" "15px 20px"
         , style "font-size" "0.8em"
@@ -1086,8 +1061,8 @@ viewGameButton htmlId ({ c } as model) label msg =
         [ text label ]
 
 
-viewHome : FrontendModel -> Html FrontendMsg
-viewHome ({ t, c } as model) =
+viewHome : UserConfig -> FrontendModel -> Html FrontendMsg
+viewHome ({ t, c } as userConfig) model =
     div
         [ style "border-radius" "20px"
         , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
@@ -1099,7 +1074,7 @@ viewHome ({ t, c } as model) =
         , style "color" c.text
         ]
         [ if model.botDifficultyMenuOpen then
-            viewBotDifficultyMenu model
+            viewBotDifficultyMenu userConfig model
 
           else
             div []
@@ -1122,9 +1097,9 @@ viewHome ({ t, c } as model) =
                     , style "align-items" "center"
                     , style "gap" "15px"
                     ]
-                    [ viewGameButton (Dom.id "gameWithFriend") model t.playWithFriend StartGameWithFriend
-                    , viewGameButton (Dom.id "gameWithBot") model t.playWithBot StartGameWithBot
-                    , viewGameButton (Dom.id "toggleRules") model t.rulesTitle ToggleRulesModal
+                    [ viewGameButton userConfig (Dom.id "gameWithFriend") t.playWithFriend StartGameWithFriend
+                    , viewGameButton userConfig (Dom.id "gameWithBot") t.playWithBot StartGameWithBot
+                    , viewGameButton userConfig (Dom.id "toggleRules") t.rulesTitle ToggleRulesModal
                     , button
                         [ class "menu-button"
                         , onClick
@@ -1180,15 +1155,15 @@ viewHome ({ t, c } as model) =
                     ]
                 ]
         , if model.rulesModalVisible then
-            viewRulesModal model
+            viewRulesModal userConfig model
 
           else
             text ""
         ]
 
 
-viewGame : FrontendModel -> GameMode -> Html FrontendMsg
-viewGame ({ t, c } as model) mode =
+viewGame : UserConfig -> FrontendModel -> GameMode -> Html FrontendMsg
+viewGame ({ t, c } as userConfig) model mode =
     let
         gameTitle =
             case model.tutorialState of
@@ -1241,7 +1216,7 @@ viewGame ({ t, c } as model) mode =
             , style "flex-shrink" "0"
             ]
             [ text gameTitle
-            , viewStatus model
+            , viewStatus userConfig model
             ]
         , div
             [ style "flex" "1"
@@ -1256,7 +1231,7 @@ viewGame ({ t, c } as model) mode =
                 [ style "width" "min(100%, calc(100vh - 300px))"
                 , style "aspect-ratio" "1/1"
                 ]
-                [ viewBigBoard model ]
+                [ viewBigBoard userConfig model ]
             ]
         , div
             [ style "padding" "10px"
@@ -1492,8 +1467,8 @@ viewGame ({ t, c } as model) mode =
         ]
 
 
-viewBotDifficultyMenu : FrontendModel -> Html FrontendMsg
-viewBotDifficultyMenu ({ t, c } as model) =
+viewBotDifficultyMenu : UserConfig -> FrontendModel -> Html FrontendMsg
+viewBotDifficultyMenu ({ t, c } as userConfig) model =
     div
         [ style "display" "flex"
         , style "flex-direction" "column"
@@ -1506,10 +1481,10 @@ viewBotDifficultyMenu ({ t, c } as model) =
             , style "font-size" "1.5em"
             ]
             [ text t.chooseDifficulty ]
-        , viewDifficultyButton model t.easy Easy
-        , viewDifficultyButton model t.medium Medium
-        , viewDifficultyButton model t.hard Hard
-        , viewDifficultyButton model t.elite Elite
+        , viewDifficultyButton userConfig model t.easy Easy
+        , viewDifficultyButton userConfig model t.medium Medium
+        , viewDifficultyButton userConfig model t.hard Hard
+        , viewDifficultyButton userConfig model t.elite Elite
         , case model.selectedDifficulty of
             Just _ ->
                 div
@@ -1581,8 +1556,8 @@ viewBotDifficultyMenu ({ t, c } as model) =
         ]
 
 
-viewDifficultyButton : FrontendModel -> String -> BotDifficulty -> Html FrontendMsg
-viewDifficultyButton ({ c } as model) label difficulty =
+viewDifficultyButton : UserConfig -> FrontendModel -> String -> BotDifficulty -> Html FrontendMsg
+viewDifficultyButton ({ t, c } as userConfig) model label difficulty =
     button
         [ style "padding" "12px"
         , style "font-size" "0.8em"
@@ -1615,8 +1590,8 @@ playerToString t player =
             t.playerO
 
 
-viewStatus : FrontendModel -> Html msg
-viewStatus ({ t, c } as model) =
+viewStatus : UserConfig -> FrontendModel -> Html msg
+viewStatus ({ t, c } as userConfig) model =
     div
         [ style "margin" "10px 0"
         , style "color" c.text
@@ -1724,8 +1699,8 @@ viewThinkingIndicator =
         ]
 
 
-viewLanguageSelector : FrontendModel -> Html FrontendMsg
-viewLanguageSelector ({ c } as model) =
+viewLanguageSelector : UserConfig -> FrontendModel -> Html FrontendMsg
+viewLanguageSelector ({ t, c } as userConfig) model =
     div
         [ style "position" "absolute"
         , style "top" "5px"
@@ -1740,15 +1715,15 @@ viewLanguageSelector ({ c } as model) =
         , style "box-shadow" "0 2px 10px rgba(0, 0, 0, 0.1)"
         , style "z-index" "1000"
         ]
-        [ viewDarkModeButton model
+        [ viewDarkModeButton userConfig model
         , div [ style "width" "1px", style "height" "20px", style "background-color" c.border ] []
         , viewLanguageButton "FR" FR (model.language == FR) (model.darkMode == Dark)
         , viewLanguageButton "EN" EN (model.language == EN) (model.darkMode == Dark)
         ]
 
 
-viewDarkModeButton : FrontendModel -> Html FrontendMsg
-viewDarkModeButton ({ c } as model) =
+viewDarkModeButton : UserConfig -> FrontendModel -> Html FrontendMsg
+viewDarkModeButton ({ t, c } as userConfig) model =
     button
         [ style "padding" "8px"
         , style "font-size" "1.1em"
@@ -1808,8 +1783,8 @@ viewLanguageButton label lang isActive isDark =
         [ text label ]
 
 
-viewBigBoard : FrontendModel -> Html FrontendMsg
-viewBigBoard ({ c } as model) =
+viewBigBoard : UserConfig -> FrontendModel -> Html FrontendMsg
+viewBigBoard ({ t, c } as userConfig) model =
     let
         isBotTurn =
             case model.route of
@@ -1860,7 +1835,7 @@ viewBigBoard ({ c } as model) =
             ]
 
         boardElements =
-            List.indexedMap (viewSmallBoard model) boards
+            List.indexedMap (viewSmallBoard userConfig model) boards
 
         blinkStyle =
             if shouldBlink then
@@ -1874,8 +1849,8 @@ viewBigBoard ({ c } as model) =
         boardElements
 
 
-viewSmallBoard : FrontendModel -> Int -> SmallBoard -> Html FrontendMsg
-viewSmallBoard ({ c } as model) boardIndex smallBoardData =
+viewSmallBoard : UserConfig -> FrontendModel -> Int -> SmallBoard -> Html FrontendMsg
+viewSmallBoard ({ t, c } as userConfig) model boardIndex smallBoardData =
     let
         isActive =
             case model.board.activeBoard of
@@ -1986,7 +1961,7 @@ viewSmallBoard ({ c } as model) boardIndex smallBoardData =
                    )
 
         cellElements =
-            List.indexedMap (viewCell model boardIndex isClickable cellStyle) smallBoardData.cells
+            List.indexedMap (viewCell userConfig model boardIndex isClickable cellStyle) smallBoardData.cells
 
         blinkStyle =
             if shouldBlink then
@@ -2027,11 +2002,12 @@ viewSmallBoard ({ c } as model) boardIndex smallBoardData =
         cellElements
 
 
-viewCell : FrontendModel -> Int -> Bool -> List (Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
-viewCell ({ c } as model) boardIndex isClickable cellStyles cellIndex cellState =
+viewCell : UserConfig -> FrontendModel -> Int -> Bool -> List (Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
+viewCell ({ t, c } as userConfig) model boardIndex isClickable cellStyles cellIndex cellState =
     case model.tutorialState of
         Just _ ->
-            Tutorial.View.viewTutorialCell model
+            Tutorial.View.viewTutorialCell userConfig
+                model
                 boardIndex
                 (if isClickable then
                     1
@@ -2220,8 +2196,8 @@ reconstructBoardFromMoves moves upToIndex initialBoardState =
         movesToApply
 
 
-viewRulesModal : FrontendModel -> Html FrontendMsg
-viewRulesModal ({ t, c } as model) =
+viewRulesModal : UserConfig -> FrontendModel -> Html FrontendMsg
+viewRulesModal ({ t, c } as userConfig) model =
     div
         [ style "position" "fixed"
         , style "top" "0"
@@ -2328,8 +2304,8 @@ shouldEnableNextButton model =
             False
 
 
-viewTutorialOverlay : FrontendModel -> Html FrontendMsg
-viewTutorialOverlay ({ t, c } as model) =
+viewTutorialOverlay : UserConfig -> FrontendModel -> Html FrontendMsg
+viewTutorialOverlay ({ t, c } as userConfig) model =
     case model.tutorialState of
         Just step ->
             let
@@ -2445,8 +2421,8 @@ viewTutorialOverlay ({ t, c } as model) =
             text ""
 
 
-viewGameResultModal : FrontendModel -> Html FrontendMsg
-viewGameResultModal ({ t, c } as model) =
+viewGameResultModal : UserConfig -> FrontendModel -> Html FrontendMsg
+viewGameResultModal ({ t, c } as userConfig) model =
     div
         [ style "position" "fixed"
         , style "top" "0"

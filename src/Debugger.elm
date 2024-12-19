@@ -80,8 +80,8 @@ boardToString board =
         ++ " }"
 
 
-view : FrontendModel -> List (Html FrontendMsg)
-view ({ c } as model) =
+view : UserConfig -> FrontendModel -> List (Html FrontendMsg)
+view { c } model =
     if model.frClickCount >= 4 || model.debuggerVisible then
         [ div
             [ style "position" "fixed"

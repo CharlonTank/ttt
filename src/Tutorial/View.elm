@@ -10,8 +10,8 @@ import Tutorial.Types exposing (TutorialStep(..))
 import Types exposing (..)
 
 
-viewTutorialCell : FrontendModel -> Int -> Int -> List (Html.Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
-viewTutorialCell ({ c } as model) boardIndex isClickableIndex cellStyles cellIndex cellState =
+viewTutorialCell : UserConfig -> FrontendModel -> Int -> Int -> List (Html.Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
+viewTutorialCell { c } model boardIndex isClickableIndex cellStyles cellIndex cellState =
     let
         isTutorialCell =
             case model.tutorialState of

@@ -6,8 +6,7 @@ import Effect.Browser.Navigation exposing (Key)
 import Effect.Lamdera exposing (ClientId)
 import Effect.Time
 import I18n exposing (Language(..), Translation, languageToString)
-import Json.Decode as D
-import Json.Encode as E
+import Lamdera.Json as Json
 import Random
 import Theme exposing (DarkOrLight(..), Theme, darkModeToString)
 import Tutorial.Types exposing (TutorialStep)
@@ -98,7 +97,10 @@ type alias FrontendModel =
     , botThinking : Bool
     , inMatchmaking : Bool
     , onlineOpponent : Maybe ClientId
-    , t : Translation
+    }
+
+type alias UserConfig =
+    { t : Translation
     , c : Theme
     }
 
@@ -131,7 +133,7 @@ type FrontendMsg
     | RedoMove
     | ToggleDarkMode
     | ToggleDebugMode
-    | ReceivedLocalStorage D.Value
+    | ReceivedLocalStorage LocalStorage
     | StartDraggingDebugger Float Float
     | StopDraggingDebugger
     | DragDebugger Float Float
