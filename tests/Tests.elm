@@ -2,13 +2,10 @@ module Tests exposing (..)
 
 import Backend
 import Effect.Browser.Dom as Dom
-import Effect.Command as Command exposing (BackendOnly, Command, FrontendOnly)
 import Effect.Http exposing (Response(..))
 import Effect.Lamdera
-import Effect.Subscription as Subscription
 import Effect.Test exposing (FileUpload(..), HttpResponse(..), MultipleFilesUpload(..))
 import Frontend
-import Html
 import Time
 import Types exposing (BackendModel, BackendMsg, FrontendModel, FrontendMsg, ToBackend, ToFrontend)
 import Url
@@ -40,6 +37,7 @@ sessionId0 =
     Effect.Lamdera.sessionIdFromString "sessionId0"
 
 
+test : Effect.Test.Instructions ToBackend FrontendMsg FrontendModel ToFrontend BackendMsg BackendModel
 test =
     Effect.Test.start
         "A test"

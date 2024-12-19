@@ -74,7 +74,7 @@ type alias FrontendModel =
     { key : Effect.Browser.Navigation.Key
     , board : BigBoard
     , route : Route
-    , language : Language
+    , language : Maybe Language
     , darkMode : DarkOrLight
     , moveHistory : List Move
     , currentMoveIndex : Int
@@ -163,10 +163,10 @@ type alias LocalStorage =
 localStorageToString : LocalStorage -> String
 localStorageToString localStorage =
     "language: "
-        ++ languageToString localStorage.language
+        ++ languageToString (Just localStorage.language)
         ++ "\n"
         ++ "darkMode: "
-        ++ darkModeToString localStorage.darkMode
+        ++ darkModeToString (localStorage.darkMode)
         ++ "\n"
 
 

@@ -161,13 +161,16 @@ type Language
     | EN
 
 
-languageToString : Language -> String
+languageToString : Maybe Language -> String
 languageToString lang =
     case lang of
-        FR ->
+        Just FR ->
             "fr"
 
-        EN ->
+        Just EN ->
+            "en"
+
+        Nothing ->
             "en"
 
 

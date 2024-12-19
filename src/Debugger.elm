@@ -224,7 +224,7 @@ view { c } model =
 localStorageToString : LocalStorage -> String
 localStorageToString localStorage =
     "language: "
-        ++ languageToString localStorage.language
+        ++ languageToString (Just localStorage.language)
         ++ "\n"
         ++ "darkMode: "
         ++ darkModeToString localStorage.darkMode

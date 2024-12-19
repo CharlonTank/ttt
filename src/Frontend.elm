@@ -70,7 +70,7 @@ init url key =
     ( { key = key
       , board = initialBoard X
       , route = Home
-      , language = EN
+      , language = Nothing
       , darkMode = Dark
       , moveHistory = []
       , currentMoveIndex = -1
@@ -343,7 +343,7 @@ update msg model =
             let
                 newModel =
                     { model
-                        | language = lang
+                        | language = Just lang
                         , frClickCount =
                             if lang == FR then
                                 model.frClickCount + 1
@@ -416,22 +416,15 @@ update msg model =
             ( model, Command.none )
 
         ReceivedLocalStorage json ->
-            -- let
-            --     localStorage =
-            --         json
-            --             |> Json.decodeValue (Json.field "localStorage" localStorageDecoder)
-            -- in
             case json of
                 { language, darkMode } ->
                     ( { model
-                        | language = language
+                        | language = Just language
                         , darkMode = darkMode
                       }
                     , Command.none
                     )
 
-        -- Err _ ->
-        --     ( model, Command.none )
         StartDraggingDebugger mouseX mouseY ->
             ( { model
                 | isDraggingDebugger = True
@@ -956,87 +949,92 @@ handlePlayerMove model boardIndex cellIndex =
 
 view : FrontendModel -> Browser.Document FrontendMsg
 view model =
-    let
-        ({ c, t } as userConfig) =
-            { t = translations model.language
-            , c = themes model.darkMode
+    case model.language of
+        Nothing ->
+            { title = "Tic-Tac-Toe", body = [] }
+
+        Just language ->
+            let
+                ({ c, t } as userConfig) =
+                    { t = translations language
+                    , c = themes model.darkMode
+                    }
+            in
+            { title = t.welcome
+            , body =
+                [ Html.node "link"
+                    [ attribute "rel" "stylesheet"
+                    , attribute "href" "https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+                    ]
+                    []
+                , Html.node "style"
+                    []
+                    [ text """
+                                    *:not(.game-symbol) {
+                                        font-family: 'Press Start 2P', cursive !important;
+                                    }
+                                    @keyframes thinking {
+                                        0%, 100% { opacity: 0.3; transform: scale(0.8); }
+                                        50% { opacity: 1; transform: scale(1.2); }
+                                    }
+                                    @keyframes blink {
+                                        0% { opacity: 0.5; }
+                                        50% { opacity: 1; }
+                                        100% { opacity: 0.5; }
+                                    }
+                                    @keyframes bigBoardBlink {
+                                        0% { opacity: 0.8; }
+                                        50% { opacity: 1; }
+                                        100% { opacity: 0.8; }
+                                    }
+                                    @keyframes slideIn {
+                                        0% { transform: translateY(-20px); opacity: 0; }
+                                        100% { transform: translateY(0); opacity: 1; }
+                                    }
+                                """
+                    ]
+                , div
+                    [ style "min-height" "100vh"
+                    , style "min-height" "100dvh"
+                    , style "width" "100%"
+                    , style "background" c.gradientBackground
+                    , style "display" "flex"
+                    , style "align-items" "center"
+                    , style "justify-content" "center"
+                    , style "padding" "env(safe-area-inset-top, 10px) env(safe-area-inset-right, 10px) env(safe-area-inset-bottom, 10px) env(safe-area-inset-left, 10px)"
+                    , style "box-sizing" "border-box"
+                    , style "position" "relative"
+                    , style "letter-spacing" "1px"
+                    , style "line-height" "1.5"
+                    ]
+                    ([ viewLanguageSelector userConfig model
+                     , case model.route of
+                        Home ->
+                            viewHome userConfig model
+
+                        Game mode ->
+                            viewGame userConfig model mode
+                     ]
+                        ++ Debugger.view userConfig model
+                        ++ [ if model.gameResult /= Ongoing then
+                                viewGameResultModal userConfig model
+
+                             else
+                                text ""
+                           , if model.rulesModalVisible then
+                                viewRulesModal userConfig model
+
+                             else
+                                text ""
+                           , if model.tutorialState /= Nothing then
+                                viewTutorialOverlay userConfig model
+
+                             else
+                                text ""
+                           ]
+                    )
+                ]
             }
-    in
-    { title = t.welcome
-    , body =
-        [ Html.node "link"
-            [ attribute "rel" "stylesheet"
-            , attribute "href" "https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
-            ]
-            []
-        , Html.node "style"
-            []
-            [ text """
-                *:not(.game-symbol) {
-                    font-family: 'Press Start 2P', cursive !important;
-                }
-                @keyframes thinking {
-                    0%, 100% { opacity: 0.3; transform: scale(0.8); }
-                    50% { opacity: 1; transform: scale(1.2); }
-                }
-                @keyframes blink {
-                    0% { opacity: 0.5; }
-                    50% { opacity: 1; }
-                    100% { opacity: 0.5; }
-                }
-                @keyframes bigBoardBlink {
-                    0% { opacity: 0.8; }
-                    50% { opacity: 1; }
-                    100% { opacity: 0.8; }
-                }
-                @keyframes slideIn {
-                    0% { transform: translateY(-20px); opacity: 0; }
-                    100% { transform: translateY(0); opacity: 1; }
-                }
-            """
-            ]
-        , div
-            [ style "min-height" "100vh"
-            , style "min-height" "100dvh"
-            , style "width" "100%"
-            , style "background" c.gradientBackground
-            , style "display" "flex"
-            , style "align-items" "center"
-            , style "justify-content" "center"
-            , style "padding" "env(safe-area-inset-top, 10px) env(safe-area-inset-right, 10px) env(safe-area-inset-bottom, 10px) env(safe-area-inset-left, 10px)"
-            , style "box-sizing" "border-box"
-            , style "position" "relative"
-            , style "letter-spacing" "1px"
-            , style "line-height" "1.5"
-            ]
-            ([ viewLanguageSelector userConfig model
-             , case model.route of
-                Home ->
-                    viewHome userConfig model
-
-                Game mode ->
-                    viewGame userConfig model mode
-             ]
-                ++ Debugger.view userConfig model
-                ++ [ if model.gameResult /= Ongoing then
-                        viewGameResultModal userConfig model
-
-                     else
-                        text ""
-                   , if model.rulesModalVisible then
-                        viewRulesModal userConfig model
-
-                     else
-                        text ""
-                   , if model.tutorialState /= Nothing then
-                        viewTutorialOverlay userConfig model
-
-                     else
-                        text ""
-                   ]
-            )
-        ]
-    }
 
 
 viewGameButton : UserConfig -> HtmlId -> String -> FrontendMsg -> Html FrontendMsg
@@ -1717,8 +1715,8 @@ viewLanguageSelector ({ t, c } as userConfig) model =
         ]
         [ viewDarkModeButton userConfig model
         , div [ style "width" "1px", style "height" "20px", style "background-color" c.border ] []
-        , viewLanguageButton "FR" FR (model.language == FR) (model.darkMode == Dark)
-        , viewLanguageButton "EN" EN (model.language == EN) (model.darkMode == Dark)
+        , viewLanguageButton "FR" FR (model.language == Just FR) (model.darkMode == Dark)
+        , viewLanguageButton "EN" EN (model.language == Just EN) (model.darkMode == Dark)
         ]
 
 
