@@ -165,17 +165,20 @@ languageToString : Language -> String
 languageToString lang =
     case lang of
         FR ->
-            "FR"
+            "fr"
 
         EN ->
-            "EN"
+            "en"
 
 
 stringToLanguage : String -> Language
 stringToLanguage str =
     case str of
-        "EN" ->
+        "fr" ->
+            FR
+
+        "en" ->
             EN
 
         _ ->
-            FR
+            EN

@@ -1,4 +1,4 @@
-port module Types exposing (..)
+module Types exposing (..)
 
 import Browser exposing (UrlRequest)
 import Dict exposing (Dict)
@@ -12,22 +12,6 @@ import Random
 import Theme exposing (DarkOrLight(..), Theme, darkModeToString)
 import Tutorial.Types exposing (TutorialStep)
 import Url exposing (Url)
-
-
-
--- PORTS
-
-
-port storeLocalStorage_ : E.Value -> Cmd msg
-
-
-port receiveLocalStorage_ : (D.Value -> msg) -> Sub msg
-
-
-port getLocalStorageValue_ : D.Value -> Cmd msg
-
-
-port receiveLocalStorageValue_ : (D.Value -> msg) -> Sub msg
 
 
 type Player
@@ -154,7 +138,6 @@ type FrontendMsg
     | StartResizingDebugger
     | StopResizingDebugger
     | ResizeDebugger Float Float
-    | ReceivedLocalStorageValue D.Value
     | ToggleRulesModal
     | StartOnlineGame
     | StartWithRandomPlayer

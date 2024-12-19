@@ -35,6 +35,7 @@ import Json.Decode as D
 import Json.Encode as E
 import Lamdera
 import List.Extra as List
+import LocalStorage exposing (LocalStorageUpdate(..), localStorageDecoder)
 import String
 import Svg exposing (Svg, circle, line, svg)
 import Svg.Attributes
@@ -94,10 +95,7 @@ init url key =
       , t = translations EN
       , c = Theme.themes Dark
       }
-    , Command.batch
-        [ Command.sendToJs "getLocalStorageValue" getLocalStorageValue_ (E.string "language")
-        , Command.sendToJs "getLocalStorageValue" getLocalStorageValue_ (E.string "darkMode")
-        ]
+    , LocalStorage.getLocalStorage
     )
 
 
@@ -357,12 +355,7 @@ update msg model =
                     }
             in
             ( newModel
-            , Command.sendToJs
-                "storeLocalStorage"
-                storeLocalStorage_
-                (E.object
-                    [ ( "key", E.string "language" ), ( "value", E.string (languageToString lang) ) ]
-                )
+            , LocalStorage.storeValue (LanguageUpdate lang)
             )
 
         CloseDebugger ->
@@ -419,39 +412,56 @@ update msg model =
                 | darkMode = newDarkMode
                 , c = Theme.themes newDarkMode
               }
-            , Command.sendToJs
-                "storeLocalStorage"
-                storeLocalStorage_
-                (E.object
-                    [ ( "key", E.string "darkMode" ), ( "value", E.string (darkModeToString newDarkMode) ) ]
-                )
+            , LocalStorage.storeValue (DarkModeUpdate newDarkMode)
             )
 
         ToggleDebugMode ->
             ( model, Command.none )
 
+        --  D.decodeValue D.string value_
+        --                         |> Result.map
+        --                             (\str ->
+        --                                 case D.decodeString localStorageValueDecoder str of
+        --                                     Ok { key, value } ->
+        --                                         case key of
+        --                                             "language" ->
+        --                                                 { model
+        --                                                     | language = stringToLanguage value |> Ok
+        --                                                     , t = translations (stringToLanguage value)
+        --                                                 }
+        --                                             "darkMode" ->
+        --                                                 { model
+        --                                                     | darkMode = stringToDarkOrLight value |> Ok
+        --                                                     , c = themes (stringToDarkOrLight value)
+        --                                                 }
+        --                                             _ ->
+        --                                                 model
+        --                                     Err _ ->
+        --                                         model
+        --                             )
         ReceivedLocalStorage json ->
             let
-                language =
-                    json
-                        |> D.decodeValue (D.field "language" D.string)
-                        |> Result.map stringToLanguage
-                        |> Result.withDefault EN
+                _ =
+                    Debug.log "ReceivedLocalStorage" json
 
-                darkMode =
+                localStorage =
                     json
-                        |> D.decodeValue (D.field "darkMode" D.string)
-                        |> Result.map stringToDarkOrLight
-                        |> Result.withDefault Dark
+                        |> D.decodeValue (D.field "localStorage" localStorageDecoder)
+                        |> Debug.log "localStoragee"
             in
-            ( { model
-                | language = language
-                , darkMode = darkMode
-                , t = language |> translations
-                , c = themes model.darkMode
-              }
-            , Command.none
-            )
+            case localStorage of
+                Ok { language, darkMode } ->
+                    ( { model
+                        | language = language
+                        , darkMode = darkMode
+                        , t = translations language
+                        , c = themes darkMode
+                      }
+                    , Command.none
+                    )
+
+                Err _ ->
+                    ( model, Command.none )
 
         StartDraggingDebugger mouseX mouseY ->
             ( { model
@@ -516,32 +526,6 @@ update msg model =
 
         NoOp ->
             ( model, Command.none )
-
-        ReceivedLocalStorageValue value_ ->
-            let
-                decodedValue =
-                    D.decodeValue D.string value_
-                        |> Result.map
-                            (\str ->
-                                case D.decodeString localStorageValueDecoder str of
-                                    Ok { key, value } ->
-                                        case key of
-                                            "language" ->
-                                                { model | language = stringToLanguage value, t = translations (stringToLanguage value) }
-
-                                            "darkMode" ->
-                                                { model | darkMode = stringToDarkOrLight value, c = themes (stringToDarkOrLight value) }
-
-                                            _ ->
-                                                model
-
-                                    Err _ ->
-                                        model
-                            )
-                        |> Debug.log "decodedValue"
-                        |> Result.withDefault model
-            in
-            ( decodedValue, Command.none )
 
         ToggleRulesModal ->
             ( { model | rulesModalVisible = not model.rulesModalVisible }, Command.none )
@@ -2186,10 +2170,7 @@ cellId boardIndex cellIndex =
 subscriptions : FrontendModel -> Subscription FrontendOnly FrontendMsg
 subscriptions model =
     Subscription.batch
-        [ receiveLocalStorage ReceivedLocalStorage
-        , Subscription.fromJs "receiveLocalStorageValue_"
-            receiveLocalStorageValue_
-            ReceivedLocalStorageValue
+        [ LocalStorage.receiveLocalStorage ReceivedLocalStorage
         , if model.isDraggingDebugger then
             Subscription.batch
                 [ Effect.Browser.Events.onMouseMove
@@ -2215,42 +2196,6 @@ subscriptions model =
           else
             Subscription.none
         ]
-
-
-storeLocalStorage : { key : String, value : String } -> Cmd FrontendMsg
-storeLocalStorage { key, value } =
-    storeLocalStorage_
-        (E.object
-            [ ( "key", E.string key )
-            , ( "value", E.string value )
-            ]
-        )
-
-
-receiveLocalStorage : (D.Value -> msg) -> Subscription FrontendOnly msg
-receiveLocalStorage msg =
-    Subscription.fromJs "receiveLocalStorage_"
-        receiveLocalStorage_
-        msg
-
-
-localStorageDecoder : D.Decoder LocalStorage
-localStorageDecoder =
-    D.map2
-        (\lang dark ->
-            { language = stringToLanguage lang
-            , darkMode = boolToDarkOrLight dark
-            }
-        )
-        (D.field "language" D.string)
-        (D.field "darkMode" D.bool)
-
-
-localStorageValueDecoder : D.Decoder { key : String, value : String }
-localStorageValueDecoder =
-    D.map2 (\k v -> { key = k, value = v })
-        (D.field "key" D.string)
-        (D.field "value" D.string)
 
 
 reconstructBoardFromMoves : List Move -> Int -> BigBoard -> BigBoard

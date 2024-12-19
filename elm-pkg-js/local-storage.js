@@ -1,37 +1,40 @@
 exports.init = async function (app) {
-    app.ports.storeLocalStorage_.subscribe(function (data) {
+    app.ports.storeLocalStorageValue_.subscribe(data => {
         try {
             localStorage.setItem(data.key, data.value);
         } catch (e) {
-            console.error('Error storing data in localStorage:', e);
+            console.error('Error storing data:', e);
         }
     });
 
-    app.ports.getLocalStorageValue_.subscribe(function (key) {
+    app.ports.getLocalStorage_.subscribe(() => {
         try {
-            const value = localStorage.getItem(key);
-            app.ports.receiveLocalStorageValue_.send(JSON.stringify({
-                key: key,
-                value: value || ''
-            }));
+            app.ports.receiveLocalStorage_.send({
+                localStorage: {
+                    language: (() => {
+                        switch (localStorage.getItem('language')) {
+                            case 'fr':
+                                return 'fr';
+                            case 'en':
+                                return 'en';
+                            default:
+                                return (navigator.language || '').toLowerCase().includes('fr') ? 'fr' : 'en';
+                        }
+                    })(),
+                    darkMode: (() => {
+                        switch (localStorage.getItem('darkMode')) {
+                            case 'true':
+                                return true;
+                            case 'false':
+                                return false;
+                            default:
+                                return window.matchMedia('(prefers-color-scheme: dark)').matches;
+                        }
+                    })()
+                }
+            });
         } catch (e) {
-            console.error('Error reading data from localStorage:', e);
+            console.error('Error reading data:', e);
         }
     });
-
-    // Initial load of localStorage values
-    try {
-        const language = localStorage.getItem('language') || 'FR';
-        const darkMode = localStorage.getItem('darkMode') === 'true';
-        app.ports.receiveLocalStorage_.send(JSON.stringify({
-            language: language,
-            darkMode: darkMode
-        }));
-    } catch (e) {
-        console.error('Error loading initial data from localStorage:', e);
-        app.ports.receiveLocalStorage_.send(JSON.stringify({
-            language: 'FR',
-            darkMode: false
-        }));
-    }
-}; 
+};

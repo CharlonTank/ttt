@@ -1,8 +1,6 @@
 module Debugger exposing (view)
 
 import Color
-import Debug
-import Dict
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
@@ -82,15 +80,6 @@ boardToString board =
         ++ " }"
 
 
-boolToString : Bool -> String
-boolToString bool =
-    if bool then
-        "true"
-
-    else
-        "false"
-
-
 view : FrontendModel -> List (Html FrontendMsg)
 view ({ c } as model) =
     if model.frClickCount >= 4 || model.debuggerVisible then
@@ -167,8 +156,8 @@ view ({ c } as model) =
                 [ text "Local Storage:\n"
                 , model.localStorage |> Maybe.map localStorageToString |> Maybe.withDefault "" |> text
                 , text "\nModel State:\n"
-                , text <| "language: " ++ languageToString model.language ++ "\n"
-                , text <| "darkMode: " ++ darkModeToString model.darkMode ++ "\n\n"
+                , text <| "language: " ++ (model.language |> languageToString) ++ "\n"
+                , text <| "darkMode: " ++ (model.darkMode |> darkModeToString) ++ "\n\n"
                 , text "Game State:\n"
                 , text <| boardToString model.board
                 , text "\n\nMove History:\n"
@@ -230,3 +219,13 @@ view ({ c } as model) =
 
     else
         []
+
+
+localStorageToString : LocalStorage -> String
+localStorageToString localStorage =
+    "language: "
+        ++ languageToString localStorage.language
+        ++ "\n"
+        ++ "darkMode: "
+        ++ darkModeToString localStorage.darkMode
+        ++ "\n"
