@@ -8,7 +8,7 @@ import Effect.Time
 import I18n exposing (Language(..), Translation, languageToString)
 import Lamdera.Json as Json
 import Random
-import Theme exposing (DarkOrLight(..), Theme, darkModeToString)
+import Theme exposing (..)
 import Tutorial.Types exposing (TutorialStep)
 import Url exposing (Url)
 
@@ -75,7 +75,7 @@ type alias FrontendModel =
     , board : BigBoard
     , route : Route
     , language : Maybe Language
-    , darkMode : DarkOrLight
+    , userPreference : ThemePreference
     , moveHistory : List Move
     , currentMoveIndex : Int
     , rulesModalVisible : Bool
@@ -98,6 +98,7 @@ type alias FrontendModel =
     , inMatchmaking : Bool
     , onlineOpponent : Maybe ClientId
     }
+
 
 type alias UserConfig =
     { t : Translation
@@ -156,7 +157,7 @@ type FrontendMsg
 
 type alias LocalStorage =
     { language : Language
-    , darkMode : DarkOrLight
+    , userPreference : ThemePreference
     }
 
 
@@ -165,8 +166,8 @@ localStorageToString localStorage =
     "language: "
         ++ languageToString (Just localStorage.language)
         ++ "\n"
-        ++ "darkMode: "
-        ++ darkModeToString (localStorage.darkMode)
+        ++ "userPreference: "
+        ++ themePreferenceToString localStorage.userPreference
         ++ "\n"
 
 

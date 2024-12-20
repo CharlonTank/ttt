@@ -1,5 +1,6 @@
 module Frontend exposing (..)
 
+import Audio
 import Bot
 import Browser exposing (UrlRequest(..))
 import Color
@@ -40,7 +41,7 @@ import LocalStorage exposing (LocalStorageUpdate(..), localStorageDecoder)
 import String
 import Svg exposing (Svg, circle, line, svg)
 import Svg.Attributes
-import Theme exposing (DarkOrLight(..), boolToDarkOrLight, darkModeToString, stringToDarkOrLight, themes)
+import Theme exposing (..)
 import Tutorial.Tutorial exposing (getTutorialBoard, isTutorialMoveValid)
 import Tutorial.Types exposing (TutorialStep(..))
 import Tutorial.View exposing (viewTutorialCell)
@@ -71,7 +72,7 @@ init url key =
       , board = initialBoard X
       , route = Home
       , language = Nothing
-      , darkMode = Dark
+      , userPreference = DarkMode
       , moveHistory = []
       , currentMoveIndex = -1
       , rulesModalVisible = False
@@ -229,17 +230,19 @@ update msg model =
                 , currentMoveIndex = -1
                 , gameResult = Ongoing
               }
-            , Command.none
+            , Audio.playButtonClick
             )
 
         StartGameWithBot ->
-            ( { model | botDifficultyMenuOpen = True }, Command.none )
+            ( { model | botDifficultyMenuOpen = True }
+            , Audio.playButtonClick
+            )
 
         SelectBotDifficulty difficulty ->
             ( { model
                 | selectedDifficulty = Just difficulty
               }
-            , Command.none
+            , Audio.playButtonClick
             )
 
         StartWithPlayer humanStarts ->
@@ -256,10 +259,13 @@ update msg model =
 
                 cmd =
                     if not humanStarts then
-                        Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 500))
+                        Command.batch
+                            [ Audio.playButtonClick
+                            , Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 500))
+                            ]
 
                     else
-                        Command.none
+                        Audio.playButtonClick
             in
             case model.route of
                 Game (WithBot _) ->
@@ -299,11 +305,13 @@ update msg model =
                 | route = Home
                 , gameResult = Ongoing
               }
-            , Command.none
+            , Audio.playButtonClick
             )
 
         CancelBotDifficulty ->
-            ( { model | botDifficultyMenuOpen = False }, Command.none )
+            ( { model | botDifficultyMenuOpen = False }
+            , Audio.playButtonClick
+            )
 
         PlayForMe ->
             case model.route of
@@ -347,13 +355,15 @@ update msg model =
                         , frClickCount =
                             if lang == FR then
                                 model.frClickCount + 1
-
                             else
                                 model.frClickCount
                     }
             in
             ( newModel
-            , LocalStorage.storeValue (LanguageUpdate lang)
+            , Command.batch
+                [ LocalStorage.storeValue (LanguageUpdate lang)
+                , Audio.playButtonClick
+                ]
             )
 
         CloseDebugger ->
@@ -399,17 +409,22 @@ update msg model =
 
         ToggleDarkMode ->
             let
-                newDarkMode =
-                    if model.darkMode == Dark then
-                        Light
+                newPreference =
+                    case model.userPreference of
+                        DarkMode ->
+                            LightMode
 
-                    else
-                        Dark
+                        LightMode ->
+                            SystemMode Dark
+
+                        SystemMode _ ->
+                            DarkMode
             in
-            ( { model
-                | darkMode = newDarkMode
-              }
-            , LocalStorage.storeValue (DarkModeUpdate newDarkMode)
+            ( { model | userPreference = newPreference }
+            , Command.batch
+                [ LocalStorage.storeValue (ThemePreferenceUpdate newPreference)
+                , Audio.playButtonClick
+                ]
             )
 
         ToggleDebugMode ->
@@ -417,10 +432,10 @@ update msg model =
 
         ReceivedLocalStorage json ->
             case json of
-                { language, darkMode } ->
+                { language, userPreference } ->
                     ( { model
                         | language = Just language
-                        , darkMode = darkMode
+                        , userPreference = userPreference
                       }
                     , Command.none
                     )
@@ -490,11 +505,16 @@ update msg model =
             ( model, Command.none )
 
         ToggleRulesModal ->
-            ( { model | rulesModalVisible = not model.rulesModalVisible }, Command.none )
+            ( { model | rulesModalVisible = not model.rulesModalVisible }
+            , Audio.playButtonClick
+            )
 
         StartOnlineGame ->
             ( { model | inMatchmaking = True }
-            , Effect.Lamdera.sendToBackend JoinMatchmaking
+            , Command.batch
+                [ Effect.Lamdera.sendToBackend JoinMatchmaking
+                , Audio.playOnlineSound
+                ]
             )
 
         LeaveMatchmaking ->
@@ -595,7 +615,7 @@ update msg model =
                 , gameResult = Ongoing
                 , rulesModalVisible = False
               }
-            , Command.none
+            , Audio.playButtonClick
             )
 
         NextTutorialStep ->
@@ -629,7 +649,7 @@ update msg model =
                                 Nothing ->
                                     initialBoard X
                       }
-                    , Command.none
+                    , Audio.playButtonClick
                     )
 
                 _ ->
@@ -641,7 +661,7 @@ update msg model =
                 , route = Home
                 , board = initialBoard X
               }
-            , Command.none
+            , Audio.playButtonClick
             )
 
 
@@ -913,25 +933,61 @@ handlePlayerMove model boardIndex cellIndex =
                             model.tutorialState
                 , gameResult = newGameResult
             }
+
+        soundCommand =
+            if canPlayInBoard && isCellEmpty && isSmallBoardAvailable then
+                case newGameResult of
+                    Won ->
+                        Audio.playWinSound
+
+                    Lost ->
+                        Audio.playWinSound
+
+                    Drew ->
+                        Audio.playDrawSound
+
+                    Ongoing ->
+                        let
+                            newSmallBoard =
+                                List.getAt boardIndex newBoard.boards
+                                    |> Maybe.withDefault GameLogic.emptySmallBoard
+
+                            oldSmallBoard =
+                                List.getAt boardIndex board.boards
+                                    |> Maybe.withDefault GameLogic.emptySmallBoard
+                        in
+                        if newSmallBoard.winner /= Nothing && oldSmallBoard.winner == Nothing then
+                            Audio.playSmallWinSound
+                        else
+                            Audio.playMoveSound board.currentPlayer
+
+            else
+                Audio.playErrorSound
     in
     if canPlayInBoard && isCellEmpty && isSmallBoardAvailable then
         case model.route of
             Game (WithBot difficulty) ->
                 if model.board.currentPlayer == X then
                     ( updatedModel
-                    , Effect.Process.sleep (Duration.milliseconds 500)
-                        |> Effect.Task.perform (\_ -> BotMove)
+                    , Command.batch
+                        [ soundCommand
+                        , Effect.Process.sleep (Duration.milliseconds 500)
+                            |> Effect.Task.perform (\_ -> BotMove)
+                        ]
                     )
 
                 else
-                    ( updatedModel, Command.none )
+                    ( updatedModel, soundCommand )
 
             Game OnlineGame ->
                 case model.onlinePlayer of
                     Just player ->
                         if player == model.board.currentPlayer then
                             ( updatedModel
-                            , Effect.Lamdera.sendToBackend (MakeMove boardIndex cellIndex player)
+                            , Command.batch
+                                [ soundCommand
+                                , Effect.Lamdera.sendToBackend (MakeMove boardIndex cellIndex player)
+                                ]
                             )
 
                         else
@@ -941,10 +997,10 @@ handlePlayerMove model boardIndex cellIndex =
                         ( model, Command.none )
 
             _ ->
-                ( updatedModel, Command.none )
+                ( updatedModel, soundCommand )
 
     else
-        ( model, Command.none )
+        ( model, Audio.playErrorSound )
 
 
 view : FrontendModel -> Browser.Document FrontendMsg
@@ -957,7 +1013,7 @@ view model =
             let
                 ({ c, t } as userConfig) =
                     { t = translations language
-                    , c = themes model.darkMode
+                    , c = themes model.userPreference
                     }
             in
             { title = t.welcome
@@ -1715,8 +1771,8 @@ viewLanguageSelector ({ t, c } as userConfig) model =
         ]
         [ viewDarkModeButton userConfig model
         , div [ style "width" "1px", style "height" "20px", style "background-color" c.border ] []
-        , viewLanguageButton "FR" FR (model.language == Just FR) (model.darkMode == Dark)
-        , viewLanguageButton "EN" EN (model.language == Just EN) (model.darkMode == Dark)
+        , viewLanguageButton "FR" FR (model.language == Just FR) (model.userPreference == DarkMode)
+        , viewLanguageButton "EN" EN (model.language == Just EN) (model.userPreference == DarkMode)
         ]
 
 
@@ -1737,11 +1793,18 @@ viewDarkModeButton ({ t, c } as userConfig) model =
         , onClick ToggleDarkMode
         ]
         [ text
-            (if model.darkMode == Dark then
-                "🌙"
+            (case model.userPreference of
+                DarkMode ->
+                    "🌙"
 
-             else
-                "☀️"
+                LightMode ->
+                    "☀️"
+
+                SystemMode Dark ->
+                    "🌙"
+
+                SystemMode Light ->
+                    "☀️"
             )
         ]
 

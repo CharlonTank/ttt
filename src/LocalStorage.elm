@@ -14,8 +14,7 @@ import Json.Decode as D
 import Json.Decode.Pipeline as D
 import Json.Encode as E
 import Lamdera.Json as Json
-import Theme exposing (DarkOrLight(..), boolToDarkOrLight, darkModeToString)
-
+import Theme exposing (..)
 port storeLocalStorageValue_ : Json.Value -> Cmd msg
 
 
@@ -27,13 +26,13 @@ port getLocalStorage_ : Json.Value -> Cmd ms
 
 type alias LocalStorage =
     { language : Language
-    , darkMode : DarkOrLight
+    , userPreference : ThemePreference
     }
 
 
 type LocalStorageUpdate
     = LanguageUpdate Language
-    | DarkModeUpdate DarkOrLight
+    | ThemePreferenceUpdate ThemePreference
 
 
 storeValue : LocalStorageUpdate -> Command FrontendOnly toMsg msg
@@ -47,9 +46,9 @@ storeValue update =
                     , ( "value", E.string (languageToString (Just lang)) )
                     ]
 
-                DarkModeUpdate darkMode ->
+                ThemePreferenceUpdate preference ->
                     [ ( "key", E.string "darkMode" )
-                    , ( "value", E.string (darkModeToString darkMode) )
+                    , ( "value", E.string (themePreferenceToString preference) )
                     ]
         )
 
@@ -67,7 +66,7 @@ receiveLocalStorage msg =
 defaultLocalStorage : LocalStorage
 defaultLocalStorage =
     { language = EN
-    , darkMode = Dark
+    , userPreference = DarkMode  -- Start with dark mode by default
     }
 
 
@@ -75,7 +74,7 @@ localStorageDecoder : Json.Decoder LocalStorage
 localStorageDecoder =
     D.succeed LocalStorage
         |> D.required "language" (D.string |> D.map stringToLanguage)
-        |> D.required "darkMode" (D.bool |> D.map boolToDarkOrLight)
+        |> D.required "darkMode" (D.string |> D.map stringToThemePreference)
 
 
 getLocalStorage : Command FrontendOnly toMsg msg

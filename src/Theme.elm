@@ -1,4 +1,4 @@
-module Theme exposing (DarkOrLight(..), Theme, boolToDarkOrLight, darkModeToString, stringToDarkOrLight, themes)
+module Theme exposing (..)
 
 import Color
 
@@ -20,70 +20,103 @@ type alias Theme =
     }
 
 
-type DarkOrLight
+themes : ThemePreference -> Theme
+themes preference =
+    case preference of
+        DarkMode ->
+            darkTheme
+
+        LightMode ->
+            lightTheme
+
+        SystemMode systemMode ->
+            case systemMode of
+                Dark ->
+                    darkTheme
+
+                Light ->
+                    lightTheme
+
+
+darkTheme : Theme
+darkTheme =
+    { background = Color.darkBackground
+    , gradientBackground = Color.darkGradientBackground
+    , secondaryBackground = Color.darkSecondaryBackground
+    , tertiaryBackground = Color.darkSecondaryBackground
+    , text = Color.darkText
+    , primary = Color.primary
+    , border = Color.darkBorder
+    , textHover = Color.darkTextHover
+    , danger = Color.danger
+    , success = Color.success
+    , disabled = Color.disabled
+    , playerX = Color.playerX
+    , playerO = Color.playerO
+    }
+
+
+lightTheme : Theme
+lightTheme =
+    { background = Color.lightBackground
+    , gradientBackground = Color.lightGradientBackground
+    , secondaryBackground = Color.primary
+    , tertiaryBackground = Color.lightSecondaryBackground
+    , text = Color.lightText
+    , primary = Color.primary
+    , border = Color.lightBorder
+    , textHover = Color.lightText
+    , danger = Color.danger
+    , success = Color.success
+    , disabled = Color.disabled
+    , playerX = Color.playerX
+    , playerO = Color.playerO
+    }
+
+
+
+type ThemePreference
+    = DarkMode
+    | LightMode
+    | SystemMode SystemDarkOrLight
+
+
+type SystemDarkOrLight
     = Dark
     | Light
 
 
-darkModeToString : DarkOrLight -> String
-darkModeToString darkOrLight =
-    case darkOrLight of
-        Dark ->
-            "true"
+stringToThemePreference : String -> ThemePreference
+stringToThemePreference str =
+    case str of
+        "dark" ->
+            DarkMode
 
-        Light ->
-            "false"
+        "light" ->
+            LightMode
 
+        "system-dark" ->
+            SystemMode Dark
 
-boolToDarkOrLight : Bool -> DarkOrLight
-boolToDarkOrLight bool =
-    if bool then
-        Dark
+        "system-light" ->
+            SystemMode Light
 
-    else
-        Light
-
-
-stringToDarkOrLight : String -> DarkOrLight
-stringToDarkOrLight string =
-    if string == "true" then
-        Dark
-
-    else
-        Light
+        _ ->
+            -- Default if unrecognized
+            SystemMode Light
 
 
-themes : DarkOrLight -> Theme
-themes darkOrLight =
-    case darkOrLight of
-        Dark ->
-            { background = Color.darkBackground
-            , gradientBackground = Color.darkGradientBackground
-            , secondaryBackground = Color.darkSecondaryBackground
-            , tertiaryBackground = Color.darkSecondaryBackground
-            , text = Color.darkText
-            , primary = Color.primary
-            , border = Color.darkBorder
-            , textHover = Color.darkTextHover
-            , danger = Color.danger
-            , success = Color.success
-            , disabled = Color.disabled
-            , playerX = Color.playerX
-            , playerO = Color.playerO
-            }
+themePreferenceToString : ThemePreference -> String
+themePreferenceToString preference =
+    case preference of
+        DarkMode ->
+            "dark"
 
-        Light ->
-            { background = Color.lightBackground
-            , gradientBackground = Color.lightGradientBackground
-            , secondaryBackground = Color.primary
-            , tertiaryBackground = Color.lightSecondaryBackground
-            , text = Color.lightText
-            , primary = Color.primary
-            , border = Color.lightBorder
-            , textHover = Color.lightText
-            , danger = Color.danger
-            , success = Color.success
-            , disabled = Color.disabled
-            , playerX = Color.playerX
-            , playerO = Color.playerO
-            }
+        LightMode ->
+            "light"
+
+        SystemMode Dark ->
+            "system-dark"
+
+        SystemMode Light ->
+            "system-light" 

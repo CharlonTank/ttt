@@ -22,14 +22,15 @@ exports.init = async function (app) {
                         }
                     })(),
                     darkMode: (() => {
-                        switch (localStorage.getItem('darkMode')) {
-                            case 'true':
-                                return true;
-                            case 'false':
-                                return false;
-                            default:
-                                return window.matchMedia('(prefers-color-scheme: dark)').matches;
-                        }
+                        const stored = localStorage.getItem('darkMode');
+                        if (stored === 'dark') return 'dark';
+                        if (stored === 'light') return 'light';
+                        if (stored === 'system-dark') return 'system-dark';
+                        if (stored === 'system-light') return 'system-light';
+                        // If not set, determine system mode:
+                        return window.matchMedia('(prefers-color-scheme: dark)').matches
+                            ? 'system-dark'
+                            : 'system-light';
                     })()
                 }
             });
