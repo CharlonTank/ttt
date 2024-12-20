@@ -74,7 +74,6 @@ lightTheme =
     }
 
 
-
 type ThemePreference
     = DarkMode
     | LightMode
@@ -119,4 +118,4 @@ themePreferenceToString preference =
             "system-dark"
 
         SystemMode Light ->
-            "system-light" 
+            "system-light"

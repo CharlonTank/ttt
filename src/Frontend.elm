@@ -147,6 +147,7 @@ update msg model =
                                 ( { updatedModel | botThinking = True }
                                 , Command.batch [ cmd, Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 500)) ]
                                 )
+
                             else
                                 ( updatedModel, cmd )
 
@@ -187,6 +188,7 @@ update msg model =
                                             ( { modelAfterMove | botThinking = True }
                                             , Command.batch [ moveCmd, Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 500)) ]
                                             )
+
                                         else
                                             ( modelAfterMove, moveCmd )
 
@@ -1007,7 +1009,7 @@ view : FrontendModel -> Browser.Document FrontendMsg
 view model =
     case model.language of
         Nothing ->
-            { title = "Tic-Tac-Toe", body = [] }
+            { title = "Tic-Tac-Toe", body = [ viewLoadingScreen { t = translations EN, c = themes model.userPreference } model ] }
 
         Just language ->
             let
@@ -1062,6 +1064,7 @@ view model =
                     ]
                     [ div
                         [ style "min-height" "100vh"
+                        , style "background" c.gradientBackground
                         , style "min-height" "100dvh"
                         , style "width" "100%"
                         , style "display" "flex"
@@ -1074,9 +1077,14 @@ view model =
                         , style "left" "0"
                         , style "letter-spacing" "1px"
                         , style "line-height" "1.5"
-                        , style "opacity" (if model.isLoading then "0" else "1")
+                        , style "opacity"
+                            (if model.isLoading then
+                                "0"
+
+                             else
+                                "1"
+                            )
                         , style "transition" "opacity 0.3s ease-in"
-                        , style "z-index" "1"
                         ]
                         ([ viewLanguageSelector userConfig model
                          , case model.route of
@@ -1089,20 +1097,24 @@ view model =
                             ++ Debugger.view userConfig model
                             ++ [ if model.gameResult /= Ongoing then
                                     viewGameResultModal userConfig model
+
                                  else
                                     text ""
                                , if model.rulesModalVisible then
                                     viewRulesModal userConfig model
+
                                  else
                                     text ""
                                , if model.tutorialState /= Nothing then
                                     viewTutorialOverlay userConfig model
+
                                  else
                                     text ""
                                ]
                         )
                     , if model.isLoading then
                         viewLoadingScreen userConfig model
+
                       else
                         text ""
                     ]
@@ -2571,7 +2583,13 @@ viewLoadingScreen { c, t } model =
         , style "z-index" "2"
         , style "opacity" "1"
         , style "transition" "opacity 0.3s ease-out"
-        , style "opacity" (if model.isLoading then "1" else "0")
+        , style "opacity"
+            (if model.isLoading then
+                "1"
+
+             else
+                "0"
+            )
         ]
         [ div
             [ style "display" "flex"
@@ -2579,19 +2597,19 @@ viewLoadingScreen { c, t } model =
             , style "align-items" "center"
             , style "animation" "pulse 2s infinite"
             ]
-            [ div 
+            [ div
                 [ style "font-size" "min(2.5em, 10vw)"
                 , style "color" c.text
                 , style "line-height" "1.2"
                 ]
                 [ text "Ultimate" ]
-            , div 
+            , div
                 [ style "font-size" "min(1.5em, 6vw)"
                 , style "color" c.text
                 , style "margin-bottom" "15px"
                 ]
                 [ text "Tic-Tac-Toe" ]
-            , div 
+            , div
                 [ style "font-size" "min(0.8em, 3vw)"
                 , style "color" Color.primary
                 , style "opacity" "0.8"

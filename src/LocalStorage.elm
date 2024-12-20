@@ -15,6 +15,8 @@ import Json.Decode.Pipeline as D
 import Json.Encode as E
 import Lamdera.Json as Json
 import Theme exposing (..)
+
+
 port storeLocalStorageValue_ : Json.Value -> Cmd msg
 
 
@@ -66,7 +68,7 @@ receiveLocalStorage msg =
 defaultLocalStorage : LocalStorage
 defaultLocalStorage =
     { language = EN
-    , userPreference = DarkMode  -- Start with dark mode by default
+    , userPreference = DarkMode -- Start with dark mode by default
     }
 
 
