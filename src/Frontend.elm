@@ -72,7 +72,8 @@ init url key =
       , board = initialBoard X
       , route = Home
       , language = Nothing
-      , userPreference = DarkMode
+      , userPreference = SystemMode
+      , systemMode = Light
       , moveHistory = []
       , currentMoveIndex = -1
       , rulesModalVisible = False
@@ -412,9 +413,9 @@ update msg model =
                             LightMode
 
                         LightMode ->
-                            SystemMode Dark
+                            SystemMode
 
-                        SystemMode _ ->
+                        SystemMode ->
                             DarkMode
             in
             ( { model | userPreference = newPreference }
@@ -427,10 +428,11 @@ update msg model =
         ToggleDebugMode ->
             ( model, Command.none )
 
-        ReceivedLocalStorage { language, userPreference } ->
+        ReceivedLocalStorage { language, userPreference, systemMode } ->
             ( { model
                 | language = Just language
                 , userPreference = userPreference
+                , systemMode = systemMode
               }
             , Command.none
             )
@@ -1009,13 +1011,13 @@ view : FrontendModel -> Browser.Document FrontendMsg
 view model =
     case model.language of
         Nothing ->
-            { title = "Tic-Tac-Toe", body = [ viewLoadingScreen { t = translations EN, c = themes model.userPreference } model ] }
+            { title = "Tic-Tac-Toe", body = [ viewLoadingScreen { t = translations EN, c = themes model.userPreference model.systemMode } model ] }
 
         Just language ->
             let
                 ({ c, t } as userConfig) =
                     { t = translations language
-                    , c = themes model.userPreference
+                    , c = themes model.userPreference model.systemMode
                     }
             in
             { title = t.welcome
@@ -1829,11 +1831,8 @@ viewDarkModeButton ({ t, c } as userConfig) model =
                 LightMode ->
                     "☀️"
 
-                SystemMode Dark ->
-                    "🌙"
-
-                SystemMode Light ->
-                    "☀️"
+                SystemMode ->
+                    "🌓"
             )
         ]
 

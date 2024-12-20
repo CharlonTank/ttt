@@ -28,13 +28,14 @@ port getLocalStorage_ : Json.Value -> Cmd ms
 
 type alias LocalStorage =
     { language : Language
-    , userPreference : ThemePreference
+    , userPreference : UserPreference
+    , systemMode : Mode
     }
 
 
 type LocalStorageUpdate
     = LanguageUpdate Language
-    | ThemePreferenceUpdate ThemePreference
+    | ThemePreferenceUpdate UserPreference
 
 
 storeValue : LocalStorageUpdate -> Command FrontendOnly toMsg msg
@@ -50,7 +51,19 @@ storeValue update =
 
                 ThemePreferenceUpdate preference ->
                     [ ( "key", E.string "darkMode" )
-                    , ( "value", E.string (themePreferenceToString preference) )
+                    , ( "value"
+                      , E.string
+                            (case preference of
+                                DarkMode ->
+                                    "dark"
+
+                                LightMode ->
+                                    "light"
+
+                                SystemMode ->
+                                    "system"
+                            )
+                      )
                     ]
         )
 
@@ -68,7 +81,8 @@ receiveLocalStorage msg =
 defaultLocalStorage : LocalStorage
 defaultLocalStorage =
     { language = EN
-    , userPreference = DarkMode -- Start with dark mode by default
+    , userPreference = SystemMode -- Start with system mode by default
+    , systemMode = Light
     }
 
 
@@ -76,7 +90,18 @@ localStorageDecoder : Json.Decoder LocalStorage
 localStorageDecoder =
     D.succeed LocalStorage
         |> D.required "language" (D.string |> D.map stringToLanguage)
-        |> D.required "darkMode" (D.string |> D.map stringToThemePreference)
+        |> D.required "userPreference" (D.string |> D.map stringToUserPreference)
+        |> D.required "systemMode" (D.string |> D.map stringToMode)
+
+
+stringToMode : String -> Mode
+stringToMode str =
+    case str of
+        "dark" ->
+            Dark
+
+        _ ->
+            Light
 
 
 getLocalStorage : Command FrontendOnly toMsg msg

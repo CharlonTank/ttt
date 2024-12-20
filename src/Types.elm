@@ -75,7 +75,8 @@ type alias FrontendModel =
     , board : BigBoard
     , route : Route
     , language : Maybe Language
-    , userPreference : ThemePreference
+    , userPreference : UserPreference
+    , systemMode : Mode
     , moveHistory : List Move
     , currentMoveIndex : Int
     , rulesModalVisible : Bool
@@ -161,7 +162,8 @@ type FrontendMsg
 
 type alias LocalStorage =
     { language : Language
-    , userPreference : ThemePreference
+    , userPreference : UserPreference
+    , systemMode : Mode
     }
 
 
@@ -171,7 +173,7 @@ localStorageToString localStorage =
         ++ languageToString (Just localStorage.language)
         ++ "\n"
         ++ "userPreference: "
-        ++ themePreferenceToString localStorage.userPreference
+        ++ userPreferenceToString localStorage.userPreference localStorage.systemMode
         ++ "\n"
 
 

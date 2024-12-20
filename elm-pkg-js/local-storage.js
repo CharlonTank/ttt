@@ -21,21 +21,28 @@ exports.init = async function (app) {
                                 return (navigator.language || '').toLowerCase().includes('fr') ? 'fr' : 'en';
                         }
                     })(),
-                    darkMode: (() => {
+                    userPreference: (() => {
                         const stored = localStorage.getItem('darkMode');
                         if (stored === 'dark') return 'dark';
                         if (stored === 'light') return 'light';
-                        if (stored === 'system-dark') return 'system-dark';
-                        if (stored === 'system-light') return 'system-light';
-                        // If not set, determine system mode:
-                        return window.matchMedia('(prefers-color-scheme: dark)').matches
-                            ? 'system-dark'
-                            : 'system-light';
-                    })()
+                        if (stored === 'system-dark' || stored === 'system-light') return 'system';
+                        return 'system';
+                    })(),
+                    systemMode: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
                 }
             });
         } catch (e) {
             console.error('Error reading data:', e);
         }
+    });
+
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+        app.ports.receiveLocalStorage_.send({
+            localStorage: {
+                language: localStorage.getItem('language') || ((navigator.language || '').toLowerCase().includes('fr') ? 'fr' : 'en'),
+                userPreference: localStorage.getItem('darkMode') || 'system',
+                systemMode: e.matches ? 'dark' : 'light'
+            }
+        });
     });
 };

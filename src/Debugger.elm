@@ -73,7 +73,7 @@ view { c } model =
                 , model.localStorage |> Maybe.map localStorageToString |> Maybe.withDefault "" |> text
                 , text "\nModel State:\n"
                 , text <| "language: " ++ (model.language |> languageToString) ++ "\n"
-                , text <| "userPreference: " ++ themePreferenceToString model.userPreference ++ "\n\n"
+                , text <| "userPreference: " ++ userPreferenceToString model.userPreference model.systemMode ++ "\n\n"
                 , text "Game State:\n"
                 , text <| boardToString model.board
                 ]
@@ -172,5 +172,5 @@ localStorageToString localStorage =
         ++ languageToString (Just localStorage.language)
         ++ "\n"
         ++ "userPreference: "
-        ++ themePreferenceToString localStorage.userPreference
+        ++ userPreferenceToString localStorage.userPreference localStorage.systemMode
         ++ "\n"

@@ -20,8 +20,19 @@ type alias Theme =
     }
 
 
-themes : ThemePreference -> Theme
-themes preference =
+type UserPreference
+    = DarkMode
+    | LightMode
+    | SystemMode
+
+
+type Mode
+    = Dark
+    | Light
+
+
+themes : UserPreference -> Mode -> Theme
+themes preference systemMode =
     case preference of
         DarkMode ->
             darkTheme
@@ -29,7 +40,7 @@ themes preference =
         LightMode ->
             lightTheme
 
-        SystemMode systemMode ->
+        SystemMode ->
             case systemMode of
                 Dark ->
                     darkTheme
@@ -74,19 +85,8 @@ lightTheme =
     }
 
 
-type ThemePreference
-    = DarkMode
-    | LightMode
-    | SystemMode SystemDarkOrLight
-
-
-type SystemDarkOrLight
-    = Dark
-    | Light
-
-
-stringToThemePreference : String -> ThemePreference
-stringToThemePreference str =
+stringToUserPreference : String -> UserPreference
+stringToUserPreference str =
     case str of
         "dark" ->
             DarkMode
@@ -95,18 +95,18 @@ stringToThemePreference str =
             LightMode
 
         "system-dark" ->
-            SystemMode Dark
+            SystemMode
 
         "system-light" ->
-            SystemMode Light
+            SystemMode
 
         _ ->
             -- Default if unrecognized
-            SystemMode Light
+            SystemMode
 
 
-themePreferenceToString : ThemePreference -> String
-themePreferenceToString preference =
+userPreferenceToString : UserPreference -> Mode -> String
+userPreferenceToString preference systemMode =
     case preference of
         DarkMode ->
             "dark"
@@ -114,8 +114,10 @@ themePreferenceToString preference =
         LightMode ->
             "light"
 
-        SystemMode Dark ->
-            "system-dark"
+        SystemMode ->
+            case systemMode of
+                Dark ->
+                    "system-dark"
 
-        SystemMode Light ->
-            "system-light"
+                Light ->
+                    "system-light"
