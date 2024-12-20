@@ -599,7 +599,10 @@ update msg model =
                 , currentMoveIndex = -1
                 , gameResult = Lost
               }
-            , Effect.Lamdera.sendToBackend AbandonGame
+            , Command.batch
+                [ Effect.Lamdera.sendToBackend AbandonGame
+                , Audio.playLoseSound
+                ]
             )
 
         StartTutorial ->
@@ -668,7 +671,7 @@ update msg model =
             ( { model | isLoading = False }, Command.none )
 
 
-updateFromBackend : ToFrontend -> FrontendModel -> ( FrontendModel, Command restriction toMsg FrontendMsg )
+updateFromBackend : ToFrontend -> FrontendModel -> ( FrontendModel, Command FrontendOnly toMsg FrontendMsg )
 updateFromBackend msg model =
     case msg of
         NoOpToFrontend ->
@@ -719,6 +722,22 @@ updateFromBackend msg model =
 
                             else
                                 Ongoing
+
+                soundCommand =
+                    let
+                        oldSmallBoard =
+                            List.getAt move.boardIndex model.board.boards
+                                |> Maybe.withDefault GameLogic.emptySmallBoard
+
+                        newSmallBoard =
+                            List.getAt move.boardIndex newBoard.boards
+                                |> Maybe.withDefault GameLogic.emptySmallBoard
+                    in
+                    if newSmallBoard.winner /= Nothing && oldSmallBoard.winner == Nothing then
+                        Audio.playSmallWinSound
+
+                    else
+                        Audio.playMoveSound move.player
             in
             ( { model
                 | board = newBoard
@@ -726,7 +745,7 @@ updateFromBackend msg model =
                 , currentMoveIndex = newIndex
                 , gameResult = newGameResult
               }
-            , Command.none
+            , soundCommand
             )
 
         OpponentLeft ->
@@ -735,7 +754,7 @@ updateFromBackend msg model =
                 , onlinePlayer = Nothing
                 , gameResult = Won
               }
-            , Command.none
+            , Audio.playWinSound
             )
 
 
@@ -944,7 +963,7 @@ handlePlayerMove model boardIndex cellIndex =
                         Audio.playWinSound
 
                     Lost ->
-                        Audio.playWinSound
+                        Audio.playLoseSound
 
                     Drew ->
                         Audio.playDrawSound

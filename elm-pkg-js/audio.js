@@ -3,11 +3,21 @@ exports.init = async function (app) {
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const audioBuffers = {};
     const volumes = {
-        'win': 0.7,
-        'small-win': 0.6,
-        'error': 0.4,
-        'big-win': 0.7,
-        'default': 0.5
+        'win': 0.5,
+        'small-win': 0.5,
+        'error': 0.5,
+        'big-win': 0.5,
+        'lose': 0.5,
+        'default': 0.5,
+        'button-click': 0.2,
+        'move-x': 0.2,
+        'move-o': 0.2,
+        'draw': 0.2,
+        'play-online': 0.2,
+        'sound-1': 0.2,
+        'sound-2': 0.2,
+        'sound-3': 0.2,
+        'sound': 0.2
     };
 
     // Load sounds immediately
@@ -17,7 +27,7 @@ exports.init = async function (app) {
     async function loadSounds() {
         const soundFiles = {
             'button-click': '/sounds/button-click.wav',
-            'win': '/sounds/win.mp3',
+            'win': '/sounds/win.wav',
             'draw': '/sounds/draw.mp3',
             'move-x': '/sounds/move-x.mp3',
             'move-o': '/sounds/move-o.mp3',
@@ -25,6 +35,7 @@ exports.init = async function (app) {
             'small-win': '/sounds/small-win.mp3',
             'play-online': '/sounds/play-online.mp3',
             'big-win': '/sounds/big-win.mp3',
+            'lose': '/sounds/lose.wav',
             'sound-1': '/sounds/1.wav',
             'sound-2': '/sounds/2.wav',
             'sound-3': '/sounds/3.wav',

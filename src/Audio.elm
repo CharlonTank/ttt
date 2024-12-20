@@ -2,6 +2,7 @@ port module Audio exposing
     ( playButtonClick
     , playDrawSound
     , playErrorSound
+    , playLoseSound
     , playMoveSound
     , playOnlineSound
     , playSmallWinSound
@@ -24,6 +25,11 @@ playButtonClick =
 playWinSound : Command FrontendOnly toMsg msg
 playWinSound =
     Command.sendToJs "playSound_" playSound_ (E.string "win")
+
+
+playLoseSound : Command FrontendOnly toMsg msg
+playLoseSound =
+    Command.sendToJs "playSound_" playSound_ (E.string "lose")
 
 
 playDrawSound : Command FrontendOnly toMsg msg
