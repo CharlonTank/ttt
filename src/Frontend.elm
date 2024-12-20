@@ -94,9 +94,20 @@ init url key =
       , botThinking = False
       , inMatchmaking = False
       , onlineOpponent = Nothing
+      , isLoading = True
+      , loadingProgress = 0
       }
-    , LocalStorage.getLocalStorage
+    , Command.batch
+        [ LocalStorage.getLocalStorage
+        , startLoadingAnimation
+        ]
     )
+
+
+startLoadingAnimation : Command FrontendOnly ToBackend FrontendMsg
+startLoadingAnimation =
+    Effect.Process.sleep (Duration.milliseconds 1000)
+        |> Effect.Task.perform (\_ -> LoadingComplete)
 
 
 update : FrontendMsg -> FrontendModel -> ( FrontendModel, Command FrontendOnly ToBackend FrontendMsg )
@@ -136,7 +147,6 @@ update msg model =
                                 ( { updatedModel | botThinking = True }
                                 , Command.batch [ cmd, Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 500)) ]
                                 )
-
                             else
                                 ( updatedModel, cmd )
 
@@ -172,32 +182,16 @@ update msg model =
                                         let
                                             ( modelAfterMove, moveCmd ) =
                                                 handlePlayerMove model boardIdx cellIdx
-
-                                            newGameResult =
-                                                case modelAfterMove.board.winner of
-                                                    Just winner ->
-                                                        if winner == X then
-                                                            Won
-
-                                                        else
-                                                            Lost
-
-                                                    Nothing ->
-                                                        if isBigBoardComplete modelAfterMove.board then
-                                                            Drew
-
-                                                        else
-                                                            Ongoing
                                         in
-                                        ( { modelAfterMove
-                                            | botThinking = False
-                                            , gameResult = newGameResult
-                                          }
-                                        , moveCmd
-                                        )
+                                        if modelAfterMove.board.winner == Nothing then
+                                            ( { modelAfterMove | botThinking = True }
+                                            , Command.batch [ moveCmd, Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 500)) ]
+                                            )
+                                        else
+                                            ( modelAfterMove, moveCmd )
 
                                     Nothing ->
-                                        ( { model | botThinking = False }, Command.none )
+                                        ( model, Command.none )
                         in
                         ( newModel, cmd )
 
@@ -355,6 +349,7 @@ update msg model =
                         , frClickCount =
                             if lang == FR then
                                 model.frClickCount + 1
+
                             else
                                 model.frClickCount
                     }
@@ -430,15 +425,13 @@ update msg model =
         ToggleDebugMode ->
             ( model, Command.none )
 
-        ReceivedLocalStorage json ->
-            case json of
-                { language, userPreference } ->
-                    ( { model
-                        | language = Just language
-                        , userPreference = userPreference
-                      }
-                    , Command.none
-                    )
+        ReceivedLocalStorage { language, userPreference } ->
+            ( { model
+                | language = Just language
+                , userPreference = userPreference
+              }
+            , Command.none
+            )
 
         StartDraggingDebugger mouseX mouseY ->
             ( { model
@@ -663,6 +656,12 @@ update msg model =
               }
             , Audio.playButtonClick
             )
+
+        UpdateLoadingProgress progress ->
+            ( { model | loadingProgress = progress }, Command.none )
+
+        LoadingComplete ->
+            ( { model | isLoading = False }, Command.none )
 
 
 updateFromBackend : ToFrontend -> FrontendModel -> ( FrontendModel, Command restriction toMsg FrontendMsg )
@@ -958,6 +957,7 @@ handlePlayerMove model boardIndex cellIndex =
                         in
                         if newSmallBoard.winner /= Nothing && oldSmallBoard.winner == Nothing then
                             Audio.playSmallWinSound
+
                         else
                             Audio.playMoveSound board.currentPlayer
 
@@ -1026,69 +1026,86 @@ view model =
                 , Html.node "style"
                     []
                     [ text """
-                                    *:not(.game-symbol) {
-                                        font-family: 'Press Start 2P', cursive !important;
-                                    }
-                                    @keyframes thinking {
-                                        0%, 100% { opacity: 0.3; transform: scale(0.8); }
-                                        50% { opacity: 1; transform: scale(1.2); }
-                                    }
-                                    @keyframes blink {
-                                        0% { opacity: 0.5; }
-                                        50% { opacity: 1; }
-                                        100% { opacity: 0.5; }
-                                    }
-                                    @keyframes bigBoardBlink {
-                                        0% { opacity: 0.8; }
-                                        50% { opacity: 1; }
-                                        100% { opacity: 0.8; }
-                                    }
-                                    @keyframes slideIn {
-                                        0% { transform: translateY(-20px); opacity: 0; }
-                                        100% { transform: translateY(0); opacity: 1; }
-                                    }
-                                """
+                        *:not(.game-symbol) {
+                            font-family: 'Press Start 2P', cursive !important;
+                        }
+                        @keyframes thinking {
+                            0%, 100% { opacity: 0.3; transform: scale(0.8); }
+                            50% { opacity: 1; transform: scale(1.2); }
+                        }
+                        @keyframes blink {
+                            0% { opacity: 0.5; }
+                            50% { opacity: 1; }
+                            100% { opacity: 0.5; }
+                        }
+                        @keyframes bigBoardBlink {
+                            0% { opacity: 0.8; }
+                            50% { opacity: 1; }
+                            100% { opacity: 0.8; }
+                        }
+                        @keyframes slideIn {
+                            0% { transform: translateY(-20px); opacity: 0; }
+                            100% { transform: translateY(0); opacity: 1; }
+                        }
+                        @keyframes pulse {
+                            0% { transform: scale(1); }
+                            50% { transform: scale(1.05); }
+                            100% { transform: scale(1); }
+                        }
+                    """
                     ]
                 , div
-                    [ style "min-height" "100vh"
-                    , style "min-height" "100dvh"
+                    [ style "position" "relative"
+                    , style "min-height" "100vh"
                     , style "width" "100%"
                     , style "background" c.gradientBackground
-                    , style "display" "flex"
-                    , style "align-items" "center"
-                    , style "justify-content" "center"
-                    , style "padding" "env(safe-area-inset-top, 10px) env(safe-area-inset-right, 10px) env(safe-area-inset-bottom, 10px) env(safe-area-inset-left, 10px)"
-                    , style "box-sizing" "border-box"
-                    , style "position" "relative"
-                    , style "letter-spacing" "1px"
-                    , style "line-height" "1.5"
                     ]
-                    ([ viewLanguageSelector userConfig model
-                     , case model.route of
-                        Home ->
-                            viewHome userConfig model
+                    [ div
+                        [ style "min-height" "100vh"
+                        , style "min-height" "100dvh"
+                        , style "width" "100%"
+                        , style "display" "flex"
+                        , style "align-items" "center"
+                        , style "justify-content" "center"
+                        , style "padding" "env(safe-area-inset-top, 10px) env(safe-area-inset-right, 10px) env(safe-area-inset-bottom, 10px) env(safe-area-inset-left, 10px)"
+                        , style "box-sizing" "border-box"
+                        , style "position" "absolute"
+                        , style "top" "0"
+                        , style "left" "0"
+                        , style "letter-spacing" "1px"
+                        , style "line-height" "1.5"
+                        , style "opacity" (if model.isLoading then "0" else "1")
+                        , style "transition" "opacity 0.3s ease-in"
+                        , style "z-index" "1"
+                        ]
+                        ([ viewLanguageSelector userConfig model
+                         , case model.route of
+                            Home ->
+                                viewHome userConfig model
 
-                        Game mode ->
-                            viewGame userConfig model mode
-                     ]
-                        ++ Debugger.view userConfig model
-                        ++ [ if model.gameResult /= Ongoing then
-                                viewGameResultModal userConfig model
-
-                             else
-                                text ""
-                           , if model.rulesModalVisible then
-                                viewRulesModal userConfig model
-
-                             else
-                                text ""
-                           , if model.tutorialState /= Nothing then
-                                viewTutorialOverlay userConfig model
-
-                             else
-                                text ""
-                           ]
-                    )
+                            Game mode ->
+                                viewGame userConfig model mode
+                         ]
+                            ++ Debugger.view userConfig model
+                            ++ [ if model.gameResult /= Ongoing then
+                                    viewGameResultModal userConfig model
+                                 else
+                                    text ""
+                               , if model.rulesModalVisible then
+                                    viewRulesModal userConfig model
+                                 else
+                                    text ""
+                               , if model.tutorialState /= Nothing then
+                                    viewTutorialOverlay userConfig model
+                                 else
+                                    text ""
+                               ]
+                        )
+                    , if model.isLoading then
+                        viewLoadingScreen userConfig model
+                      else
+                        text ""
+                    ]
                 ]
             }
 
@@ -1919,7 +1936,7 @@ viewSmallBoard ({ t, c } as userConfig) model boardIndex smallBoardData =
                     True
 
                 Just activeBoardIndex ->
-                    activeBoardIndex == boardIndex
+                    boardIndex == activeBoardIndex
 
         isBotTurn =
             case model.route of
@@ -2535,5 +2552,51 @@ viewGameResultModal ({ t, c } as userConfig) model =
                 , Dom.idToAttribute (Dom.id "back-to-menu-button")
                 ]
                 [ text t.backToMenu ]
+            ]
+        ]
+
+
+viewLoadingScreen : UserConfig -> FrontendModel -> Html FrontendMsg
+viewLoadingScreen { c, t } model =
+    div
+        [ style "min-height" "100vh"
+        , style "width" "100%"
+        , style "display" "flex"
+        , style "flex-direction" "column"
+        , style "align-items" "center"
+        , style "justify-content" "center"
+        , style "position" "absolute"
+        , style "top" "0"
+        , style "left" "0"
+        , style "z-index" "2"
+        , style "opacity" "1"
+        , style "transition" "opacity 0.3s ease-out"
+        , style "opacity" (if model.isLoading then "1" else "0")
+        ]
+        [ div
+            [ style "display" "flex"
+            , style "flex-direction" "column"
+            , style "align-items" "center"
+            , style "animation" "pulse 2s infinite"
+            ]
+            [ div 
+                [ style "font-size" "min(2.5em, 10vw)"
+                , style "color" c.text
+                , style "line-height" "1.2"
+                ]
+                [ text "Ultimate" ]
+            , div 
+                [ style "font-size" "min(1.5em, 6vw)"
+                , style "color" c.text
+                , style "margin-bottom" "15px"
+                ]
+                [ text "Tic-Tac-Toe" ]
+            , div 
+                [ style "font-size" "min(0.8em, 3vw)"
+                , style "color" Color.primary
+                , style "opacity" "0.8"
+                , style "font-style" "italic"
+                ]
+                [ text "By Charlon" ]
             ]
         ]

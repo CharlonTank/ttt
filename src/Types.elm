@@ -97,6 +97,8 @@ type alias FrontendModel =
     , botThinking : Bool
     , inMatchmaking : Bool
     , onlineOpponent : Maybe ClientId
+    , isLoading : Bool
+    , loadingProgress : Float
     }
 
 
@@ -153,6 +155,8 @@ type FrontendMsg
     | NextTutorialStep
     | CompleteTutorial
     | LeaveMatchmaking
+    | UpdateLoadingProgress Float
+    | LoadingComplete
 
 
 type alias LocalStorage =

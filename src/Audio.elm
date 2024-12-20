@@ -46,4 +46,4 @@ playSmallWinSound =
 
 playOnlineSound : Command FrontendOnly toMsg msg
 playOnlineSound =
-    Command.sendToJs "playSound_" playSound_ (E.string "play-online") 
+    Command.sendToJs "playSound_" playSound_ (E.string "play-online")
