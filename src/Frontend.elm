@@ -1821,8 +1821,8 @@ viewLanguageSelector ({ t, c } as userConfig) model =
         ]
         [ viewDarkModeButton userConfig model
         , div [ style "width" "1px", style "height" "20px", style "background-color" c.border ] []
-        , viewLanguageButton "FR" FR (model.language == Just FR) (model.userPreference == DarkMode)
-        , viewLanguageButton "EN" EN (model.language == Just EN) (model.userPreference == DarkMode)
+        , viewLanguageButton "FR" FR (model.language == Just FR) (isDark model.userPreference model.systemMode)
+        , viewLanguageButton "EN" EN (model.language == Just EN) (isDark model.userPreference model.systemMode)
         ]
 
 
@@ -1857,7 +1857,7 @@ viewDarkModeButton ({ t, c } as userConfig) model =
 
 
 viewLanguageButton : String -> Language -> Bool -> Bool -> Html FrontendMsg
-viewLanguageButton label lang isActive isDark =
+viewLanguageButton label lang isActive isDark_ =
     button
         [ style "padding" "8px 12px"
         , style "font-size" "0.7em"
@@ -1866,7 +1866,7 @@ viewLanguageButton label lang isActive isDark =
             (if isActive then
                 Color.primary
 
-             else if isDark then
+             else if isDark_ then
                 Color.darkSecondaryBackground
 
              else
@@ -1876,7 +1876,7 @@ viewLanguageButton label lang isActive isDark =
             (if isActive then
                 "white"
 
-             else if isDark then
+             else if isDark_ then
                 Color.darkText
 
              else
@@ -1889,6 +1889,29 @@ viewLanguageButton label lang isActive isDark =
         , onClick (ChangeLanguage lang)
         ]
         [ text label ]
+
+
+refactoredVersionOfViewLanguageSelector : UserConfig -> Language -> Language -> Html FrontendMsg
+refactoredVersionOfViewLanguageSelector { c } selectedLang lang =
+    button
+        [ style "padding" "8px 12px"
+        , style "font-size" "0.7em"
+        , style "font-family" "inherit"
+        , style "background-color"
+            (if selectedLang == lang then
+                Color.primary
+
+             else
+                c.secondaryBackground
+            )
+        , style "color" c.text
+        , style "border" "none"
+        , style "border-radius" "6px"
+        , style "cursor" "pointer"
+        , style "transition" "all 0.2s ease"
+        , onClick (ChangeLanguage lang)
+        ]
+        [ Just lang |> languageToString |> String.toUpper |> text ]
 
 
 viewBigBoard : UserConfig -> FrontendModel -> Html FrontendMsg
@@ -2636,3 +2659,16 @@ viewLoadingScreen { c, t } model =
                 [ text "By Charlon" ]
             ]
         ]
+
+
+isDark : UserPreference -> Mode -> Bool
+isDark preference systemMode =
+    case preference of
+        DarkMode ->
+            True
+
+        LightMode ->
+            False
+
+        SystemMode ->
+            systemMode == Dark
