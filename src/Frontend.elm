@@ -38,6 +38,13 @@ import Lamdera
 import Lamdera.Json as Json
 import List.Extra as List
 import LocalStorage exposing (LocalStorageUpdate(..), localStorageDecoder)
+import Palette.Button as Button
+import Palette.Modal as Modal
+import Palette.Layout as Layout
+import Palette.Typography as T
+import Palette.Container as Container
+import Palette.Animation as Animation
+import Palette.Utils as Utils
 import String
 import Svg exposing (Svg, circle, line, svg)
 import Svg.Attributes
@@ -1144,115 +1151,73 @@ view model =
 
 
 viewGameButton : UserConfig -> HtmlId -> String -> FrontendMsg -> Html FrontendMsg
-viewGameButton { c } htmlId label msg =
+viewGameButton userConfig htmlId label msg =
     button
-        [ style "padding" "15px 20px"
-        , style "font-size" "0.8em"
-        , style "font-family" "inherit"
-        , style "background-color" c.secondaryBackground
-        , style "color" "white"
-        , style "border" "none"
-        , style "border-radius" "10px"
-        , style "cursor" "pointer"
-        , style "transition" "all 0.2s ease"
-        , style "box-shadow" "0 4px 6px rgba(0, 0, 0, 0.2)"
-        , style "margin" "10px"
-        , style "width" "100%"
-        , style "max-width" "300px"
-        , onClick msg
-        , Dom.idToAttribute htmlId
-        ]
+        (Button.secondary userConfig ++
+            Utils.margin10 ++
+            Utils.fullWidth ++
+            Utils.maxWidth 300 ++
+            [ onClick msg
+            , Dom.idToAttribute htmlId
+            ]
+        )
         [ text label ]
 
 
 viewHome : UserConfig -> FrontendModel -> Html FrontendMsg
 viewHome ({ t, c } as userConfig) model =
     div
-        [ style "border-radius" "20px"
-        , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
-        , style "padding" "40px"
-        , style "text-align" "center"
-        , style "max-width" "400px"
-        , style "width" "90%"
-        , style "background-color" c.background
-        , style "color" c.text
-        ]
+        (Container.card c ++
+            [ style "text-align" "center"
+            , style "max-width" "400px"
+            , style "width" "90%"
+            , style "color" c.text
+            ]
+        )
         [ if model.botDifficultyMenuOpen then
             viewBotDifficultyMenu userConfig model
 
           else
             div []
-                [ h1
-                    [ style "margin" "0 0 20px 0"
-                    , style "color" c.text
-                    , style "font-size" "1.5em"
-                    ]
-                    [ text t.welcome ]
-                , p
-                    [ style "color" c.text
-                    , style "margin-bottom" "30px"
-                    , style "line-height" "1.6"
-                    , style "font-size" "0.7em"
-                    ]
-                    [ text t.description ]
+                [ T.h1 c t.welcome
+                , T.text c t.description
                 , div
-                    [ style "display" "flex"
-                    , style "flex-direction" "column"
-                    , style "align-items" "center"
-                    , style "gap" "15px"
-                    ]
+                    Layout.flexColumnCenter
                     [ viewGameButton userConfig (Dom.id "gameWithFriend") t.playWithFriend StartGameWithFriend
                     , viewGameButton userConfig (Dom.id "gameWithBot") t.playWithBot StartGameWithBot
                     , viewGameButton userConfig (Dom.id "toggleRules") t.rulesTitle ToggleRulesModal
                     , button
-                        [ class "menu-button"
-                        , onClick
+                        (Button.secondary userConfig ++
+                            Button.withShadow ++
                             (if model.inMatchmaking then
-                                LeaveMatchmaking
-
+                                Button.disabled
                              else
-                                StartOnlineGame
-                            )
-                        , style "padding" "15px 20px"
-                        , style "font-size" "0.8em"
-                        , style "font-family" "inherit"
-                        , style "background-color" c.secondaryBackground
-                        , style "color" "white"
-                        , style "border" "none"
-                        , style "border-radius" "10px"
-                        , style "cursor" "pointer"
-                        , style "transition" "all 0.2s ease"
-                        , style "box-shadow" "0 4px 6px rgba(0, 0, 0, 0.2)"
-                        , style "margin" "10px"
-                        , style "width" "100%"
-                        , style "max-width" "300px"
-                        , style "opacity"
-                            (if model.inMatchmaking then
-                                "0.7"
-
-                             else
-                                "1"
-                            )
-                        , Dom.idToAttribute <|
-                            Dom.id
+                                []
+                            ) ++
+                            Utils.margin10 ++
+                            Utils.fullWidth ++
+                            Utils.maxWidth 300 ++
+                            [ onClick
                                 (if model.inMatchmaking then
-                                    "leave-matchmaking-button"
-
+                                    LeaveMatchmaking
                                  else
-                                    "start-online-game-button"
+                                    StartOnlineGame
                                 )
-                        ]
+                            , Dom.idToAttribute <|
+                                Dom.id
+                                    (if model.inMatchmaking then
+                                        "leave-matchmaking-button"
+                                     else
+                                        "start-online-game-button"
+                                    )
+                            ]
+                        )
                         [ if model.inMatchmaking then
                             div
-                                [ style "display" "flex"
-                                , style "align-items" "center"
-                                , style "justify-content" "center"
-                                , style "gap" "8px"
-                                ]
+                                Layout.flexCenterWithGap
                                 [ text t.searching
                                 , viewThinkingIndicator
                                 ]
-
                           else
                             text t.playOnline
                         ]
@@ -2330,71 +2295,26 @@ reconstructBoardFromMoves moves upToIndex initialBoardState =
 viewRulesModal : UserConfig -> FrontendModel -> Html FrontendMsg
 viewRulesModal ({ t, c } as userConfig) model =
     div
-        [ style "position" "fixed"
-        , style "top" "0"
-        , style "left" "0"
-        , style "width" "100%"
-        , style "height" "100%"
-        , style "background-color" "rgba(0, 0, 0, 0.5)"
-        , style "display" "flex"
-        , style "align-items" "center"
-        , style "justify-content" "center"
-        , style "z-index" "1000"
-        , onClick ToggleRulesModal
-        ]
+        (Modal.overlay ++
+            [ onClick ToggleRulesModal ]
+        )
         [ div
-            [ style "background-color" c.background
-            , style "padding" "30px"
-            , style "border-radius" "15px"
-            , style "text-align" "center"
-            , style "width" "min(100%, 1200px)"
-            , style "animation" "slideIn 0.3s ease-out"
-            , Html.Events.stopPropagationOn "click" (D.succeed ( NoOp, True ))
-            ]
-            [ h2
-                [ style "margin" "0 0 20px 0"
-                , style "font-size" "1.2em"
-                , style "color" c.text
-                ]
-                [ text t.rulesTitle ]
-            , pre
-                [ style "color" c.text
-                , style "white-space" "pre-wrap"
-                , style "font-family" "inherit"
-                , style "text-align" "left"
-                , style "line-height" "1.6"
-                , style "margin" "0 0 20px 0"
-                , style "font-size" "0.7em"
-                ]
-                [ text t.rulesText ]
+            (Modal.container c ++
+                [ Html.Events.stopPropagationOn "click" (D.succeed ( NoOp, True )) ]
+            )
+            [ T.h2 c t.rulesTitle
+            , T.pre c t.rulesText
             , div
-                [ style "display" "flex"
-                , style "gap" "10px"
-                , style "justify-content" "center"
-                ]
+                Layout.flexCenterWithGap
                 [ button
-                    [ style "padding" "12px 30px"
-                    , style "font-size" "0.8em"
-                    , style "background-color" Color.primary
-                    , style "color" "white"
-                    , style "border" "none"
-                    , style "border-radius" "8px"
-                    , style "cursor" "pointer"
-                    , style "transition" "all 0.2s ease"
-                    , onClick StartTutorial
-                    ]
+                    (Button.primary userConfig ++
+                        [ onClick StartTutorial ]
+                    )
                     [ text t.startTutorial ]
                 , button
-                    [ style "padding" "12px 30px"
-                    , style "font-size" "0.8em"
-                    , style "background-color" Color.primary
-                    , style "color" "white"
-                    , style "border" "none"
-                    , style "border-radius" "8px"
-                    , style "cursor" "pointer"
-                    , style "transition" "all 0.2s ease"
-                    , onClick ToggleRulesModal
-                    ]
+                    (Button.primary userConfig ++
+                        [ onClick ToggleRulesModal ]
+                    )
                     [ text t.close ]
                 ]
             ]
@@ -2555,55 +2475,29 @@ viewTutorialOverlay ({ t, c } as userConfig) model =
 viewGameResultModal : UserConfig -> FrontendModel -> Html FrontendMsg
 viewGameResultModal ({ t, c } as userConfig) model =
     div
-        [ style "position" "fixed"
-        , style "top" "0"
-        , style "left" "0"
-        , style "width" "100%"
-        , style "height" "100%"
-        , style "background-color" "rgba(0, 0, 0, 0.7)"
-        , style "display" "flex"
-        , style "align-items" "center"
-        , style "justify-content" "center"
-        , style "z-index" "1000"
-        ]
+        Modal.overlay
         [ div
-            [ style "background-color" c.background
-            , style "padding" "30px"
-            , style "border-radius" "15px"
-            , style "text-align" "center"
-            , style "animation" "slideIn 0.3s ease-out"
-            ]
-            [ h2
-                [ style "margin" "0 0 20px 0"
-                , style "font-size" "1.2em"
-                , style "color" c.text
-                ]
-                [ text <|
-                    case model.gameResult of
-                        Won ->
-                            t.youWon
+            (Modal.container c)
+            [ T.h2 c
+                (case model.gameResult of
+                    Won ->
+                        t.youWon
 
-                        Lost ->
-                            t.youLost
+                    Lost ->
+                        t.youLost
 
-                        Drew ->
-                            t.draw
+                    Drew ->
+                        t.draw
 
-                        Ongoing ->
-                            ""
-                ]
+                    Ongoing ->
+                        ""
+                )
             , button
-                [ style "padding" "12px 30px"
-                , style "font-size" "0.8em"
-                , style "background-color" Color.primary
-                , style "color" "white"
-                , style "border" "none"
-                , style "border-radius" "8px"
-                , style "cursor" "pointer"
-                , style "transition" "all 0.2s ease"
-                , onClick ReturnToMenu
-                , Dom.idToAttribute (Dom.id "back-to-menu-button")
-                ]
+                (Button.primary userConfig ++
+                    [ onClick ReturnToMenu
+                    , Dom.idToAttribute (Dom.id "back-to-menu-button")
+                    ]
+                )
                 [ text t.backToMenu ]
             ]
         ]
@@ -2612,51 +2506,23 @@ viewGameResultModal ({ t, c } as userConfig) model =
 viewLoadingScreen : UserConfig -> FrontendModel -> Html FrontendMsg
 viewLoadingScreen { c, t } model =
     div
-        [ style "min-height" "100vh"
-        , style "width" "100%"
-        , style "display" "flex"
-        , style "flex-direction" "column"
-        , style "align-items" "center"
-        , style "justify-content" "center"
-        , style "position" "absolute"
-        , style "top" "0"
-        , style "left" "0"
-        , style "z-index" "2"
-        , style "opacity" "1"
-        , style "transition" "opacity 0.3s ease-out"
-        , style "opacity"
+        (Container.fullscreen ++
+            Layout.flexCenter ++
+            [ style "z-index" "2"
+            ] ++
             (if model.isLoading then
-                "1"
-
+                Animation.fadeIn
              else
-                "0"
+                Animation.fadeOut
             )
-        ]
+        )
         [ div
-            [ style "display" "flex"
-            , style "flex-direction" "column"
-            , style "align-items" "center"
-            , style "animation" "pulse 2s infinite"
-            ]
-            [ div
-                [ style "font-size" "min(2.5em, 10vw)"
-                , style "color" c.text
-                , style "line-height" "1.2"
-                ]
-                [ text "Ultimate" ]
-            , div
-                [ style "font-size" "min(1.5em, 6vw)"
-                , style "color" c.text
-                , style "margin-bottom" "15px"
-                ]
-                [ text "Tic-Tac-Toe" ]
-            , div
-                [ style "font-size" "min(0.8em, 3vw)"
-                , style "color" Color.primary
-                , style "opacity" "0.8"
-                , style "font-style" "italic"
-                ]
-                [ text "By Charlon" ]
+            (Layout.flexColumnCenter ++
+                Animation.pulse
+            )
+            [ T.loadingTitle c "Ultimate"
+            , T.loadingSubtitle c "Tic-Tac-Toe"
+            , T.loadingAuthor c "By Charlon"
             ]
         ]
 
