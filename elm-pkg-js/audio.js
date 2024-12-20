@@ -1,33 +1,34 @@
 exports.init = async function (app) {
-    let audioContext;
+    // Initialize audio context immediately
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const audioBuffers = {};
     const volumes = {
         'win': 0.7,
         'small-win': 0.6,
         'error': 0.4,
+        'big-win': 0.7,
         'default': 0.5
     };
 
-    // Initialize audio context on first user interaction
-    const initAudioContext = () => {
-        if (!audioContext) {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            return loadSounds();
-        }
-        return Promise.resolve();
-    };
+    // Load sounds immediately
+    await loadSounds();
 
     // Load and decode audio files
-    const loadSounds = async () => {
+    async function loadSounds() {
         const soundFiles = {
-            'button-click': '/sounds/button-click.mp3',
+            'button-click': '/sounds/button-click.wav',
             'win': '/sounds/win.mp3',
             'draw': '/sounds/draw.mp3',
             'move-x': '/sounds/move-x.mp3',
             'move-o': '/sounds/move-o.mp3',
             'error': '/sounds/error.mp3',
             'small-win': '/sounds/small-win.mp3',
-            'play-online': '/sounds/play-online.mp3'
+            'play-online': '/sounds/play-online.mp3',
+            'big-win': '/sounds/big-win.mp3',
+            'sound-1': '/sounds/1.wav',
+            'sound-2': '/sounds/2.wav',
+            'sound-3': '/sounds/3.wav',
+            'sound': '/sounds/sound.wav'
         };
 
         const loadSound = async (name, url) => {
@@ -46,13 +47,12 @@ exports.init = async function (app) {
         );
 
         await Promise.all(loadPromises);
-    };
+    }
 
     // Play a sound with the given name
     const playSound = (name) => {
-        if (!audioContext) {
-            initAudioContext();
-            return;
+        if (audioContext.state === 'suspended') {
+            audioContext.resume();
         }
 
         const buffer = audioBuffers[name];
@@ -77,12 +77,12 @@ exports.init = async function (app) {
         source.start(0);
     };
 
-    // Resume audio context on user interaction
+    // Resume audio context on any user interaction
     document.addEventListener('click', () => {
-        if (audioContext && audioContext.state === 'suspended') {
+        if (audioContext.state === 'suspended') {
             audioContext.resume();
         }
-    }, { once: true });
+    });
 
     // Subscribe to port
     app.ports.playSound_.subscribe(function(soundName) {
