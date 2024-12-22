@@ -127,6 +127,7 @@ updateFromFrontend sessionId clientId msg model =
                                 , activeBoard = Nothing
                                 , winner = Nothing
                                 , initialPlayer = X
+                                , lastMove = Nothing
                                 }
 
                             newModel =

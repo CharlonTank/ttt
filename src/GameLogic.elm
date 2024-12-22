@@ -21,6 +21,7 @@ initialBoard startingPlayer =
     , activeBoard = Nothing
     , winner = Nothing
     , initialPlayer = startingPlayer
+    , lastMove = Nothing
     }
 
 
@@ -103,6 +104,7 @@ makeMove board boardIndex cellIndex player =
         , currentPlayer = nextPlayer
         , activeBoard = nextActiveBoard
         , winner = checkBigBoardWinner updatedBoards
+        , lastMove = Just { boardIndex = boardIndex, cellIndex = cellIndex, player = player }
     }
 
 

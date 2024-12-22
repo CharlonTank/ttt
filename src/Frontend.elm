@@ -671,9 +671,6 @@ update msg model =
             , Audio.playButtonClick
             )
 
-        UpdateLoadingProgress progress ->
-            ( { model | loadingProgress = progress }, Command.none )
-
         LoadingComplete ->
             ( { model | isLoading = False }, Command.none )
 
@@ -2118,7 +2115,7 @@ viewCell ({ t, c } as userConfig) model boardIndex isClickable cellStyles cellIn
                 (if isClickable then
                     1
 
-                 else
+                else
                     0
                 )
                 cellStyles
@@ -2218,6 +2215,23 @@ viewCell ({ t, c } as userConfig) model boardIndex isClickable cellStyles cellIn
 
                         _ ->
                             []
+
+                isLastMove =
+                    case model.board.lastMove of
+                        Just move ->
+                            move.boardIndex == boardIndex && move.cellIndex == cellIndex
+
+                        Nothing ->
+                            False
+
+                lastMoveHighlight =
+                    if isLastMove then
+                        [ style "box-shadow" "inset 0 0 0 2px #4CAF50"
+                        , style "background-color" (c.background ++ "CC")  -- Add some transparency
+                        ]
+
+                    else
+                        []
             in
             div
                 ([ style "width" "100%"
@@ -2234,6 +2248,7 @@ viewCell ({ t, c } as userConfig) model boardIndex isClickable cellStyles cellIn
                  ]
                     ++ cornerRadius
                     ++ cellStyles
+                    ++ lastMoveHighlight
                     ++ (if isCellClickable then
                             [ onClick (CellClicked boardIndex cellIndex) ]
 
@@ -2302,11 +2317,12 @@ reconstructBoardFromMoves moves upToIndex initialBoardState =
             List.take (upToIndex + 1) moves
 
         freshBoard =
-            { boards = List.repeat 9 GameLogic.emptySmallBoard
+            { boards = List.repeat 9 emptySmallBoard
             , currentPlayer = initialBoardState.initialPlayer
             , activeBoard = Nothing
             , winner = Nothing
             , initialPlayer = initialBoardState.initialPlayer
+            , lastMove = Nothing
             }
     in
     List.foldl

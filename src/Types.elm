@@ -42,6 +42,7 @@ type alias BigBoard =
     , activeBoard : Maybe Int
     , winner : Maybe Player
     , initialPlayer : Player
+    , lastMove : Maybe Move
     }
 
 
@@ -156,7 +157,6 @@ type FrontendMsg
     | NextTutorialStep
     | CompleteTutorial
     | LeaveMatchmaking
-    | UpdateLoadingProgress Float
     | LoadingComplete
     | KeyLeft
     | KeyRight

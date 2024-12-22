@@ -444,6 +444,7 @@ makeMove board boardIndex cellIndex =
         , currentPlayer = nextPlayer
         , activeBoard = nextActiveBoard
         , winner = checkBigBoardWinner updatedBoards
+        , lastMove = Just { boardIndex = boardIndex, cellIndex = cellIndex, player = board.currentPlayer }
     }
 
 
