@@ -38,12 +38,12 @@ import Lamdera
 import Lamdera.Json as Json
 import List.Extra as List
 import LocalStorage exposing (LocalStorageUpdate(..), localStorageDecoder)
-import Palette.Button as Button
-import Palette.Modal as Modal
-import Palette.Layout as Layout
-import Palette.Typography as T
-import Palette.Container as Container
 import Palette.Animation as Animation
+import Palette.Button as Button
+import Palette.Container as Container
+import Palette.Layout as Layout
+import Palette.Modal as Modal
+import Palette.Typography as T
 import Palette.Utils as Utils
 import String
 import Svg exposing (Svg, circle, line, svg)
@@ -677,6 +677,12 @@ update msg model =
         LoadingComplete ->
             ( { model | isLoading = False }, Command.none )
 
+        KeyLeft ->
+            update UndoMove model
+
+        KeyRight ->
+            update RedoMove model
+
 
 updateFromBackend : ToFrontend -> FrontendModel -> ( FrontendModel, Command FrontendOnly toMsg FrontendMsg )
 updateFromBackend msg model =
@@ -1153,13 +1159,13 @@ view model =
 viewGameButton : UserConfig -> HtmlId -> String -> FrontendMsg -> Html FrontendMsg
 viewGameButton userConfig htmlId label msg =
     button
-        (Button.secondary userConfig ++
-            Utils.margin10 ++
-            Utils.fullWidth ++
-            Utils.maxWidth 300 ++
-            [ onClick msg
-            , Dom.idToAttribute htmlId
-            ]
+        (Button.secondary userConfig
+            ++ Utils.margin10
+            ++ Utils.fullWidth
+            ++ Utils.maxWidth 300
+            ++ [ onClick msg
+               , Dom.idToAttribute htmlId
+               ]
         )
         [ text label ]
 
@@ -1167,12 +1173,12 @@ viewGameButton userConfig htmlId label msg =
 viewHome : UserConfig -> FrontendModel -> Html FrontendMsg
 viewHome ({ t, c } as userConfig) model =
     div
-        (Container.card c ++
-            [ style "text-align" "center"
-            , style "max-width" "400px"
-            , style "width" "90%"
-            , style "color" c.text
-            ]
+        (Container.card c
+            ++ [ style "text-align" "center"
+               , style "max-width" "400px"
+               , style "width" "90%"
+               , style "color" c.text
+               ]
         )
         [ if model.botDifficultyMenuOpen then
             viewBotDifficultyMenu userConfig model
@@ -1187,30 +1193,33 @@ viewHome ({ t, c } as userConfig) model =
                     , viewGameButton userConfig (Dom.id "gameWithBot") t.playWithBot StartGameWithBot
                     , viewGameButton userConfig (Dom.id "toggleRules") t.rulesTitle ToggleRulesModal
                     , button
-                        (Button.secondary userConfig ++
-                            Button.withShadow ++
-                            (if model.inMatchmaking then
-                                Button.disabled
-                             else
-                                []
-                            ) ++
-                            Utils.margin10 ++
-                            Utils.fullWidth ++
-                            Utils.maxWidth 300 ++
-                            [ onClick
-                                (if model.inMatchmaking then
-                                    LeaveMatchmaking
-                                 else
-                                    StartOnlineGame
-                                )
-                            , Dom.idToAttribute <|
-                                Dom.id
+                        (Button.secondary userConfig
+                            ++ Button.withShadow
+                            ++ (if model.inMatchmaking then
+                                    Button.disabled
+
+                                else
+                                    []
+                               )
+                            ++ Utils.margin10
+                            ++ Utils.fullWidth
+                            ++ Utils.maxWidth 300
+                            ++ [ onClick
                                     (if model.inMatchmaking then
-                                        "leave-matchmaking-button"
+                                        LeaveMatchmaking
+
                                      else
-                                        "start-online-game-button"
+                                        StartOnlineGame
                                     )
-                            ]
+                               , Dom.idToAttribute <|
+                                    Dom.id
+                                        (if model.inMatchmaking then
+                                            "leave-matchmaking-button"
+
+                                         else
+                                            "start-online-game-button"
+                                        )
+                               ]
                         )
                         [ if model.inMatchmaking then
                             div
@@ -1218,6 +1227,7 @@ viewHome ({ t, c } as userConfig) model =
                                 [ text t.searching
                                 , viewThinkingIndicator
                                 ]
+
                           else
                             text t.playOnline
                         ]
@@ -2243,6 +2253,21 @@ subscriptions : FrontendModel -> Subscription FrontendOnly FrontendMsg
 subscriptions model =
     Subscription.batch
         [ LocalStorage.receiveLocalStorage ReceivedLocalStorage
+        , Effect.Browser.Events.onKeyDown
+            (D.map
+                (\key ->
+                    case key of
+                        "ArrowLeft" ->
+                            KeyLeft
+
+                        "ArrowRight" ->
+                            KeyRight
+
+                        _ ->
+                            NoOp
+                )
+                (D.field "key" D.string)
+            )
         , if model.isDraggingDebugger then
             Subscription.batch
                 [ Effect.Browser.Events.onMouseMove
@@ -2295,25 +2320,25 @@ reconstructBoardFromMoves moves upToIndex initialBoardState =
 viewRulesModal : UserConfig -> FrontendModel -> Html FrontendMsg
 viewRulesModal ({ t, c } as userConfig) model =
     div
-        (Modal.overlay ++
-            [ onClick ToggleRulesModal ]
+        (Modal.overlay
+            ++ [ onClick ToggleRulesModal ]
         )
         [ div
-            (Modal.container c ++
-                [ Html.Events.stopPropagationOn "click" (D.succeed ( NoOp, True )) ]
+            (Modal.container c
+                ++ [ Html.Events.stopPropagationOn "click" (D.succeed ( NoOp, True )) ]
             )
             [ T.h2 c t.rulesTitle
             , T.pre c t.rulesText
             , div
                 Layout.flexCenterWithGap
                 [ button
-                    (Button.primary userConfig ++
-                        [ onClick StartTutorial ]
+                    (Button.primary userConfig
+                        ++ [ onClick StartTutorial ]
                     )
                     [ text t.startTutorial ]
                 , button
-                    (Button.primary userConfig ++
-                        [ onClick ToggleRulesModal ]
+                    (Button.primary userConfig
+                        ++ [ onClick ToggleRulesModal ]
                     )
                     [ text t.close ]
                 ]
@@ -2493,10 +2518,10 @@ viewGameResultModal ({ t, c } as userConfig) model =
                         ""
                 )
             , button
-                (Button.primary userConfig ++
-                    [ onClick ReturnToMenu
-                    , Dom.idToAttribute (Dom.id "back-to-menu-button")
-                    ]
+                (Button.primary userConfig
+                    ++ [ onClick ReturnToMenu
+                       , Dom.idToAttribute (Dom.id "back-to-menu-button")
+                       ]
                 )
                 [ text t.backToMenu ]
             ]
@@ -2506,19 +2531,20 @@ viewGameResultModal ({ t, c } as userConfig) model =
 viewLoadingScreen : UserConfig -> FrontendModel -> Html FrontendMsg
 viewLoadingScreen { c, t } model =
     div
-        (Container.fullscreen ++
-            Layout.flexCenter ++
-            [ style "z-index" "2"
-            ] ++
-            (if model.isLoading then
-                Animation.fadeIn
-             else
-                Animation.fadeOut
-            )
+        (Container.fullscreen
+            ++ Layout.flexCenter
+            ++ [ style "z-index" "2"
+               ]
+            ++ (if model.isLoading then
+                    Animation.fadeIn
+
+                else
+                    Animation.fadeOut
+               )
         )
         [ div
-            (Layout.flexColumnCenter ++
-                Animation.pulse
+            (Layout.flexColumnCenter
+                ++ Animation.pulse
             )
             [ T.loadingTitle c "Ultimate"
             , T.loadingSubtitle c "Tic-Tac-Toe"

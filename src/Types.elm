@@ -158,6 +158,8 @@ type FrontendMsg
     | LeaveMatchmaking
     | UpdateLoadingProgress Float
     | LoadingComplete
+    | KeyLeft
+    | KeyRight
 
 
 type alias LocalStorage =
