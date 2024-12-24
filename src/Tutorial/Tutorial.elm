@@ -13,26 +13,11 @@ getTutorialBoard step =
     case step of
         TutorialBasicMove ->
             let
-                centerBoard =
-                    { cells =
-                        [ Empty
-                        , Empty
-                        , Empty
-                        , Empty
-                        , Empty
-                        , Empty
-                        , Empty
-                        , Empty
-                        , Empty
-                        ]
-                    , winner = Nothing
-                    }
-
                 boards =
                     List.indexedMap
                         (\i b ->
                             if i == 4 then
-                                centerBoard
+                                emptySmallBoard
 
                             else
                                 emptySmallBoard
@@ -44,6 +29,7 @@ getTutorialBoard step =
             , activeBoard = Just 4
             , winner = Nothing
             , initialPlayer = X
+            , lastMove = Nothing
             }
 
         TutorialBoardSelection ->
@@ -79,6 +65,7 @@ getTutorialBoard step =
             , activeBoard = Just 2
             , winner = Nothing
             , initialPlayer = X
+            , lastMove = Nothing
             }
 
         TutorialWinningSmall ->
@@ -150,6 +137,7 @@ getTutorialBoard step =
             , activeBoard = Just 4
             , winner = Nothing
             , initialPlayer = X
+            , lastMove = Nothing
             }
 
         TutorialWinningBig ->
@@ -275,6 +263,7 @@ getTutorialBoard step =
             , activeBoard = Just 8 -- Force play in bottom-right board
             , winner = Nothing
             , initialPlayer = X
+            , lastMove = Nothing
             }
 
         TutorialFreeChoice ->
@@ -346,6 +335,7 @@ getTutorialBoard step =
             , activeBoard = Nothing
             , winner = Nothing
             , initialPlayer = X
+            , lastMove = Nothing
             }
 
 

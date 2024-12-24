@@ -1,5 +1,6 @@
 module Frontend exposing (..)
 
+import Admin
 import Audio
 import Bot
 import Browser exposing (UrlRequest(..))
@@ -38,6 +39,13 @@ import Lamdera
 import Lamdera.Json as Json
 import List.Extra as List
 import LocalStorage exposing (LocalStorageUpdate(..), localStorageDecoder)
+import Palette.Animation as Animation
+import Palette.Button as Button
+import Palette.Container as Container
+import Palette.Layout as Layout
+import Palette.Modal as Modal
+import Palette.Typography as T
+import Palette.Utils as Utils
 import String
 import Svg exposing (Svg, circle, line, svg)
 import Svg.Attributes
@@ -68,9 +76,21 @@ app_ =
 
 init : Url.Url -> Key -> ( FrontendModel, Command FrontendOnly ToBackend FrontendMsg )
 init url key =
+    let
+        route =
+            case url.path of
+                "/admin" ->
+                    Admin
+
+                "/" ->
+                    Home
+
+                _ ->
+                    Home
+    in
     ( { key = key
       , board = initialBoard X
-      , route = Home
+      , route = route
       , language = Nothing
       , userPreference = SystemMode
       , systemMode = Light
@@ -97,10 +117,12 @@ init url key =
       , onlineOpponent = Nothing
       , isLoading = True
       , loadingProgress = 0
+      , backendModel = Nothing
       }
     , Command.batch
         [ LocalStorage.getLocalStorage
         , startLoadingAnimation
+        , Effect.Lamdera.sendToBackend RequestBackendModel
         ]
     )
 
@@ -127,7 +149,25 @@ update msg model =
                     )
 
         UrlChanged url ->
-            ( model, Command.none )
+            let
+                newRoute =
+                    case url.path of
+                        "/admin" ->
+                            Admin
+
+                        "/" ->
+                            Home
+
+                        _ ->
+                            Home
+            in
+            ( { model | route = newRoute }
+            , if newRoute == Admin then
+                Effect.Lamdera.sendToBackend RequestBackendModel
+
+              else
+                Command.none
+            )
 
         CellClicked boardIndex cellIndex ->
             if model.currentMoveIndex < List.length model.moveHistory - 1 then
@@ -170,6 +210,9 @@ update msg model =
                     Home ->
                         ( model, Command.none )
 
+                    Admin ->
+                        ( model, Command.none )
+
         BotMove ->
             case model.route of
                 Game (WithBot difficulty) ->
@@ -208,6 +251,9 @@ update msg model =
                     ( model, Command.none )
 
                 Home ->
+                    ( model, Command.none )
+
+                Admin ->
                     ( model, Command.none )
 
         RestartGame ->
@@ -664,31 +710,34 @@ update msg model =
             , Audio.playButtonClick
             )
 
-        UpdateLoadingProgress progress ->
-            ( { model | loadingProgress = progress }, Command.none )
-
         LoadingComplete ->
             ( { model | isLoading = False }, Command.none )
 
+        KeyLeft ->
+            update UndoMove model
 
-updateFromBackend : ToFrontend -> FrontendModel -> ( FrontendModel, Command FrontendOnly toMsg FrontendMsg )
+        KeyRight ->
+            update RedoMove model
+
+
+updateFromBackend : ToFrontend -> FrontendModel -> ( FrontendModel, Command FrontendOnly ToBackend FrontendMsg )
 updateFromBackend msg model =
     case msg of
         NoOpToFrontend ->
             ( model, Command.none )
 
-        GameFound data ->
+        GameFound { opponentId, playerRole } ->
             ( { model
-                | inMatchmaking = False
-                , onlineOpponent = Just data.opponentId
-                , route = Game OnlineGame
+                | route = Game OnlineGame
                 , board = initialBoard X
-                , onlinePlayer = Just data.playerRole
                 , moveHistory = []
                 , currentMoveIndex = -1
+                , onlinePlayer = Just playerRole
+                , onlineOpponent = Just opponentId
+                , inMatchmaking = False
                 , gameResult = Ongoing
               }
-            , Command.none
+            , Audio.playButtonClick
             )
 
         OpponentMove move ->
@@ -696,66 +745,34 @@ updateFromBackend msg model =
                 newBoard =
                     makeMove model.board move.boardIndex move.cellIndex move.player
 
-                newHistory =
+                newMoveHistory =
                     List.take (model.currentMoveIndex + 1) model.moveHistory ++ [ move ]
-
-                newIndex =
-                    List.length newHistory - 1
-
-                newGameResult =
-                    case newBoard.winner of
-                        Just winner ->
-                            case model.onlinePlayer of
-                                Just myRole ->
-                                    if myRole == winner then
-                                        Won
-
-                                    else
-                                        Lost
-
-                                Nothing ->
-                                    Ongoing
-
-                        Nothing ->
-                            if isBigBoardComplete newBoard then
-                                Drew
-
-                            else
-                                Ongoing
-
-                soundCommand =
-                    let
-                        oldSmallBoard =
-                            List.getAt move.boardIndex model.board.boards
-                                |> Maybe.withDefault GameLogic.emptySmallBoard
-
-                        newSmallBoard =
-                            List.getAt move.boardIndex newBoard.boards
-                                |> Maybe.withDefault GameLogic.emptySmallBoard
-                    in
-                    if newSmallBoard.winner /= Nothing && oldSmallBoard.winner == Nothing then
-                        Audio.playSmallWinSound
-
-                    else
-                        Audio.playMoveSound move.player
             in
             ( { model
                 | board = newBoard
-                , moveHistory = newHistory
-                , currentMoveIndex = newIndex
-                , gameResult = newGameResult
+                , moveHistory = newMoveHistory
+                , currentMoveIndex = model.currentMoveIndex + 1
+                , gameResult =
+                    if newBoard.winner == Just O then
+                        Lost
+
+                    else if newBoard.winner == Just X then
+                        Won
+
+                    else if isBigBoardComplete newBoard then
+                        Drew
+
+                    else
+                        Ongoing
               }
-            , soundCommand
+            , Audio.playMoveSound move.player
             )
 
         OpponentLeft ->
-            ( { model
-                | onlineOpponent = Nothing
-                , onlinePlayer = Nothing
-                , gameResult = Won
-              }
-            , Audio.playWinSound
-            )
+            ( { model | onlineOpponent = Nothing }, Command.none )
+
+        BackendModelReceived backendModel ->
+            ( { model | backendModel = Just backendModel }, Command.none )
 
 
 handlePlayerMove : FrontendModel -> Int -> Int -> ( FrontendModel, Command FrontendOnly ToBackend FrontendMsg )
@@ -1052,6 +1069,9 @@ view model =
                         *:not(.game-symbol) {
                             font-family: 'Press Start 2P', cursive !important;
                         }
+                        .game-symbol {
+                            font-family: Arial, sans-serif;
+                        }
                         @keyframes thinking {
                             0%, 100% { opacity: 0.3; transform: scale(0.8); }
                             50% { opacity: 1; transform: scale(1.2); }
@@ -1075,8 +1095,7 @@ view model =
                             50% { transform: scale(1.05); }
                             100% { transform: scale(1); }
                         }
-                    """
-                    ]
+                        """ ]
                 , div
                     [ style "position" "relative"
                     , style "min-height" "100vh"
@@ -1101,7 +1120,6 @@ view model =
                         , style "opacity"
                             (if model.isLoading then
                                 "0"
-
                              else
                                 "1"
                             )
@@ -1114,28 +1132,40 @@ view model =
 
                             Game mode ->
                                 viewGame userConfig model mode
+                                
+                            Admin ->
+                                case model.backendModel of
+                                    Just backendModel ->
+                                        Admin.view userConfig backendModel
+                                    Nothing ->
+                                        div [ style "padding" "20px", style "text-align" "center" ]
+                                            [ text "Loading admin data..." ]
                          ]
-                            ++ Debugger.view userConfig model
-                            ++ [ if model.gameResult /= Ongoing then
-                                    viewGameResultModal userConfig model
-
-                                 else
-                                    text ""
-                               , if model.rulesModalVisible then
-                                    viewRulesModal userConfig model
-
-                                 else
-                                    text ""
-                               , if model.tutorialState /= Nothing then
-                                    viewTutorialOverlay userConfig model
-
-                                 else
-                                    text ""
-                               ]
+                            ++ (if model.route /= Admin then
+                                    Debugger.view userConfig model
+                                else
+                                    []
+                               )
+                            ++ (if model.route /= Admin then
+                                    [ if model.gameResult /= Ongoing then
+                                        viewGameResultModal userConfig model
+                                     else
+                                        text ""
+                                   , if model.rulesModalVisible then
+                                        viewRulesModal userConfig model
+                                     else
+                                        text ""
+                                   , if model.tutorialState /= Nothing then
+                                        viewTutorialOverlay userConfig model
+                                     else
+                                        text ""
+                                   ]
+                                else
+                                    [ text "" ]
+                               )
                         )
                     , if model.isLoading then
                         viewLoadingScreen userConfig model
-
                       else
                         text ""
                     ]
@@ -1144,111 +1174,73 @@ view model =
 
 
 viewGameButton : UserConfig -> HtmlId -> String -> FrontendMsg -> Html FrontendMsg
-viewGameButton { c } htmlId label msg =
+viewGameButton userConfig htmlId label msg =
     button
-        [ style "padding" "15px 20px"
-        , style "font-size" "0.8em"
-        , style "font-family" "inherit"
-        , style "background-color" c.secondaryBackground
-        , style "color" "white"
-        , style "border" "none"
-        , style "border-radius" "10px"
-        , style "cursor" "pointer"
-        , style "transition" "all 0.2s ease"
-        , style "box-shadow" "0 4px 6px rgba(0, 0, 0, 0.2)"
-        , style "margin" "10px"
-        , style "width" "100%"
-        , style "max-width" "300px"
-        , onClick msg
-        , Dom.idToAttribute htmlId
-        ]
+        (Button.secondary userConfig
+            ++ Utils.margin10
+            ++ Utils.fullWidth
+            ++ Utils.maxWidth 300
+            ++ [ onClick msg
+               , Dom.idToAttribute htmlId
+               ]
+        )
         [ text label ]
 
 
 viewHome : UserConfig -> FrontendModel -> Html FrontendMsg
 viewHome ({ t, c } as userConfig) model =
     div
-        [ style "border-radius" "20px"
-        , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
-        , style "padding" "40px"
-        , style "text-align" "center"
-        , style "max-width" "400px"
-        , style "width" "90%"
-        , style "background-color" c.background
-        , style "color" c.text
-        ]
+        (Container.card c
+            ++ [ style "text-align" "center"
+               , style "max-width" "400px"
+               , style "width" "90%"
+               , style "color" c.text
+               ]
+        )
         [ if model.botDifficultyMenuOpen then
             viewBotDifficultyMenu userConfig model
 
           else
             div []
-                [ h1
-                    [ style "margin" "0 0 20px 0"
-                    , style "color" c.text
-                    , style "font-size" "1.5em"
-                    ]
-                    [ text t.welcome ]
-                , p
-                    [ style "color" c.text
-                    , style "margin-bottom" "30px"
-                    , style "line-height" "1.6"
-                    , style "font-size" "0.7em"
-                    ]
-                    [ text t.description ]
+                [ T.h1 c t.welcome
+                , T.text c t.description
                 , div
-                    [ style "display" "flex"
-                    , style "flex-direction" "column"
-                    , style "align-items" "center"
-                    , style "gap" "15px"
-                    ]
+                    Layout.flexColumnCenter
                     [ viewGameButton userConfig (Dom.id "gameWithFriend") t.playWithFriend StartGameWithFriend
                     , viewGameButton userConfig (Dom.id "gameWithBot") t.playWithBot StartGameWithBot
                     , viewGameButton userConfig (Dom.id "toggleRules") t.rulesTitle ToggleRulesModal
                     , button
-                        [ class "menu-button"
-                        , onClick
-                            (if model.inMatchmaking then
-                                LeaveMatchmaking
+                        (Button.secondary userConfig
+                            ++ Button.withShadow
+                            ++ (if model.inMatchmaking then
+                                    Button.disabled
 
-                             else
-                                StartOnlineGame
-                            )
-                        , style "padding" "15px 20px"
-                        , style "font-size" "0.8em"
-                        , style "font-family" "inherit"
-                        , style "background-color" c.secondaryBackground
-                        , style "color" "white"
-                        , style "border" "none"
-                        , style "border-radius" "10px"
-                        , style "cursor" "pointer"
-                        , style "transition" "all 0.2s ease"
-                        , style "box-shadow" "0 4px 6px rgba(0, 0, 0, 0.2)"
-                        , style "margin" "10px"
-                        , style "width" "100%"
-                        , style "max-width" "300px"
-                        , style "opacity"
-                            (if model.inMatchmaking then
-                                "0.7"
+                                else
+                                    []
+                               )
+                            ++ Utils.margin10
+                            ++ Utils.fullWidth
+                            ++ Utils.maxWidth 300
+                            ++ [ onClick
+                                    (if model.inMatchmaking then
+                                        LeaveMatchmaking
 
-                             else
-                                "1"
-                            )
-                        , Dom.idToAttribute <|
-                            Dom.id
-                                (if model.inMatchmaking then
-                                    "leave-matchmaking-button"
+                                     else
+                                        StartOnlineGame
+                                    )
+                               , Dom.idToAttribute <|
+                                    Dom.id
+                                        (if model.inMatchmaking then
+                                            "leave-matchmaking-button"
 
-                                 else
-                                    "start-online-game-button"
-                                )
-                        ]
+                                         else
+                                            "start-online-game-button"
+                                        )
+                               ]
+                        )
                         [ if model.inMatchmaking then
                             div
-                                [ style "display" "flex"
-                                , style "align-items" "center"
-                                , style "justify-content" "center"
-                                , style "gap" "8px"
-                                ]
+                                Layout.flexCenterWithGap
                                 [ text t.searching
                                 , viewThinkingIndicator
                                 ]
@@ -2243,6 +2235,23 @@ viewCell ({ t, c } as userConfig) model boardIndex isClickable cellStyles cellIn
 
                         _ ->
                             []
+
+                isLastMove =
+                    case model.board.lastMove of
+                        Just move ->
+                            move.boardIndex == boardIndex && move.cellIndex == cellIndex
+
+                        Nothing ->
+                            False
+
+                lastMoveHighlight =
+                    if isLastMove then
+                        [ style "box-shadow" "inset 0 0 0 2px #4CAF50"
+                        , style "background-color" (c.background ++ "CC") -- Add some transparency
+                        ]
+
+                    else
+                        []
             in
             div
                 ([ style "width" "100%"
@@ -2259,6 +2268,7 @@ viewCell ({ t, c } as userConfig) model boardIndex isClickable cellStyles cellIn
                  ]
                     ++ cornerRadius
                     ++ cellStyles
+                    ++ lastMoveHighlight
                     ++ (if isCellClickable then
                             [ onClick (CellClicked boardIndex cellIndex) ]
 
@@ -2278,6 +2288,21 @@ subscriptions : FrontendModel -> Subscription FrontendOnly FrontendMsg
 subscriptions model =
     Subscription.batch
         [ LocalStorage.receiveLocalStorage ReceivedLocalStorage
+        , Effect.Browser.Events.onKeyDown
+            (D.map
+                (\key ->
+                    case key of
+                        "ArrowLeft" ->
+                            KeyLeft
+
+                        "ArrowRight" ->
+                            KeyRight
+
+                        _ ->
+                            NoOp
+                )
+                (D.field "key" D.string)
+            )
         , if model.isDraggingDebugger then
             Subscription.batch
                 [ Effect.Browser.Events.onMouseMove
@@ -2312,11 +2337,12 @@ reconstructBoardFromMoves moves upToIndex initialBoardState =
             List.take (upToIndex + 1) moves
 
         freshBoard =
-            { boards = List.repeat 9 GameLogic.emptySmallBoard
+            { boards = List.repeat 9 emptySmallBoard
             , currentPlayer = initialBoardState.initialPlayer
             , activeBoard = Nothing
             , winner = Nothing
             , initialPlayer = initialBoardState.initialPlayer
+            , lastMove = Nothing
             }
     in
     List.foldl
@@ -2330,71 +2356,26 @@ reconstructBoardFromMoves moves upToIndex initialBoardState =
 viewRulesModal : UserConfig -> FrontendModel -> Html FrontendMsg
 viewRulesModal ({ t, c } as userConfig) model =
     div
-        [ style "position" "fixed"
-        , style "top" "0"
-        , style "left" "0"
-        , style "width" "100%"
-        , style "height" "100%"
-        , style "background-color" "rgba(0, 0, 0, 0.5)"
-        , style "display" "flex"
-        , style "align-items" "center"
-        , style "justify-content" "center"
-        , style "z-index" "1000"
-        , onClick ToggleRulesModal
-        ]
+        (Modal.overlay
+            ++ [ onClick ToggleRulesModal ]
+        )
         [ div
-            [ style "background-color" c.background
-            , style "padding" "30px"
-            , style "border-radius" "15px"
-            , style "text-align" "center"
-            , style "width" "min(100%, 1200px)"
-            , style "animation" "slideIn 0.3s ease-out"
-            , Html.Events.stopPropagationOn "click" (D.succeed ( NoOp, True ))
-            ]
-            [ h2
-                [ style "margin" "0 0 20px 0"
-                , style "font-size" "1.2em"
-                , style "color" c.text
-                ]
-                [ text t.rulesTitle ]
-            , pre
-                [ style "color" c.text
-                , style "white-space" "pre-wrap"
-                , style "font-family" "inherit"
-                , style "text-align" "left"
-                , style "line-height" "1.6"
-                , style "margin" "0 0 20px 0"
-                , style "font-size" "0.7em"
-                ]
-                [ text t.rulesText ]
+            (Modal.container c
+                ++ [ Html.Events.stopPropagationOn "click" (D.succeed ( NoOp, True )) ]
+            )
+            [ T.h2 c t.rulesTitle
+            , T.pre c t.rulesText
             , div
-                [ style "display" "flex"
-                , style "gap" "10px"
-                , style "justify-content" "center"
-                ]
+                Layout.flexCenterWithGap
                 [ button
-                    [ style "padding" "12px 30px"
-                    , style "font-size" "0.8em"
-                    , style "background-color" Color.primary
-                    , style "color" "white"
-                    , style "border" "none"
-                    , style "border-radius" "8px"
-                    , style "cursor" "pointer"
-                    , style "transition" "all 0.2s ease"
-                    , onClick StartTutorial
-                    ]
+                    (Button.primary userConfig
+                        ++ [ onClick StartTutorial ]
+                    )
                     [ text t.startTutorial ]
                 , button
-                    [ style "padding" "12px 30px"
-                    , style "font-size" "0.8em"
-                    , style "background-color" Color.primary
-                    , style "color" "white"
-                    , style "border" "none"
-                    , style "border-radius" "8px"
-                    , style "cursor" "pointer"
-                    , style "transition" "all 0.2s ease"
-                    , onClick ToggleRulesModal
-                    ]
+                    (Button.primary userConfig
+                        ++ [ onClick ToggleRulesModal ]
+                    )
                     [ text t.close ]
                 ]
             ]
@@ -2555,55 +2536,29 @@ viewTutorialOverlay ({ t, c } as userConfig) model =
 viewGameResultModal : UserConfig -> FrontendModel -> Html FrontendMsg
 viewGameResultModal ({ t, c } as userConfig) model =
     div
-        [ style "position" "fixed"
-        , style "top" "0"
-        , style "left" "0"
-        , style "width" "100%"
-        , style "height" "100%"
-        , style "background-color" "rgba(0, 0, 0, 0.7)"
-        , style "display" "flex"
-        , style "align-items" "center"
-        , style "justify-content" "center"
-        , style "z-index" "1000"
-        ]
+        Modal.overlay
         [ div
-            [ style "background-color" c.background
-            , style "padding" "30px"
-            , style "border-radius" "15px"
-            , style "text-align" "center"
-            , style "animation" "slideIn 0.3s ease-out"
-            ]
-            [ h2
-                [ style "margin" "0 0 20px 0"
-                , style "font-size" "1.2em"
-                , style "color" c.text
-                ]
-                [ text <|
-                    case model.gameResult of
-                        Won ->
-                            t.youWon
+            (Modal.container c)
+            [ T.h2 c
+                (case model.gameResult of
+                    Won ->
+                        t.youWon
 
-                        Lost ->
-                            t.youLost
+                    Lost ->
+                        t.youLost
 
-                        Drew ->
-                            t.draw
+                    Drew ->
+                        t.draw
 
-                        Ongoing ->
-                            ""
-                ]
+                    Ongoing ->
+                        ""
+                )
             , button
-                [ style "padding" "12px 30px"
-                , style "font-size" "0.8em"
-                , style "background-color" Color.primary
-                , style "color" "white"
-                , style "border" "none"
-                , style "border-radius" "8px"
-                , style "cursor" "pointer"
-                , style "transition" "all 0.2s ease"
-                , onClick ReturnToMenu
-                , Dom.idToAttribute (Dom.id "back-to-menu-button")
-                ]
+                (Button.primary userConfig
+                    ++ [ onClick ReturnToMenu
+                       , Dom.idToAttribute (Dom.id "back-to-menu-button")
+                       ]
+                )
                 [ text t.backToMenu ]
             ]
         ]
@@ -2612,51 +2567,23 @@ viewGameResultModal ({ t, c } as userConfig) model =
 viewLoadingScreen : UserConfig -> FrontendModel -> Html FrontendMsg
 viewLoadingScreen { c, t } model =
     div
-        [ style "min-height" "100vh"
-        , style "width" "100%"
-        , style "display" "flex"
-        , style "flex-direction" "column"
-        , style "align-items" "center"
-        , style "justify-content" "center"
-        , style "position" "absolute"
-        , style "top" "0"
-        , style "left" "0"
-        , style "z-index" "2"
-        , style "opacity" "1"
-        , style "transition" "opacity 0.3s ease-out"
-        , style "opacity"
-            (if model.isLoading then
-                "1"
-
-             else
-                "0"
-            )
-        ]
+        (Container.fullscreen
+            ++ Layout.flexCenter
+            ++ [ style "z-index" "2"
+               ]
+            ++ (if model.isLoading then
+                    Animation.fadeIn
+                else
+                    Animation.fadeOut
+               )
+        )
         [ div
-            [ style "display" "flex"
-            , style "flex-direction" "column"
-            , style "align-items" "center"
-            , style "animation" "pulse 2s infinite"
-            ]
-            [ div
-                [ style "font-size" "min(2.5em, 10vw)"
-                , style "color" c.text
-                , style "line-height" "1.2"
-                ]
-                [ text "Ultimate" ]
-            , div
-                [ style "font-size" "min(1.5em, 6vw)"
-                , style "color" c.text
-                , style "margin-bottom" "15px"
-                ]
-                [ text "Tic-Tac-Toe" ]
-            , div
-                [ style "font-size" "min(0.8em, 3vw)"
-                , style "color" Color.primary
-                , style "opacity" "0.8"
-                , style "font-style" "italic"
-                ]
-                [ text "By Charlon" ]
+            (Layout.flexColumnCenter
+                ++ Animation.pulse
+            )
+            [ T.loadingTitle c "Ultimate"
+            , T.loadingSubtitle c "Tic-Tac-Toe"
+            , T.loadingAuthor c "By Charlon"
             ]
         ]
 

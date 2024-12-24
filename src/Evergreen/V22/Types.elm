@@ -1,18 +1,14 @@
-module Types exposing (..)
+module Evergreen.V22.Types exposing (..)
 
-import Browser exposing (UrlRequest)
-import Dict exposing (Dict)
-import Effect.Browser.Navigation exposing (Key)
-import Effect.Lamdera exposing (ClientId, SessionId)
+import Browser
+import Effect.Browser.Navigation
+import Effect.Lamdera
 import Effect.Time
-import I18n exposing (Language(..), Translation, languageToString)
-import Lamdera.Json as Json
+import Evergreen.V22.I18n
+import Evergreen.V22.Theme
+import Evergreen.V22.Tutorial.Types
 import Random
-import Theme exposing (..)
-import Tutorial.Types exposing (TutorialStep)
-import Url exposing (Url)
-import SeqDict as Dict exposing (SeqDict)
-import Id exposing (Id(..), GameId(..))
+import Url
 
 
 type Player
@@ -64,7 +60,25 @@ type GameMode
 type Route
     = Home
     | Game GameMode
-    | Admin
+
+
+type alias Position =
+    { x : Float
+    , y : Float
+    }
+
+
+type alias Size =
+    { width : Float
+    , height : Float
+    }
+
+
+type alias LocalStorage =
+    { language : Evergreen.V22.I18n.Language
+    , userPreference : Evergreen.V22.Theme.UserPreference
+    , systemMode : Evergreen.V22.Theme.Mode
+    }
 
 
 type GameResult
@@ -78,9 +92,9 @@ type alias FrontendModel =
     { key : Effect.Browser.Navigation.Key
     , board : BigBoard
     , route : Route
-    , language : Maybe Language
-    , userPreference : UserPreference
-    , systemMode : Mode
+    , language : Maybe Evergreen.V22.I18n.Language
+    , userPreference : Evergreen.V22.Theme.UserPreference
+    , systemMode : Evergreen.V22.Theme.Mode
     , moveHistory : List Move
     , currentMoveIndex : Int
     , rulesModalVisible : Bool
@@ -97,45 +111,27 @@ type alias FrontendModel =
     , onlinePlayer : Maybe Player
     , showAbandonConfirm : Bool
     , gameResult : GameResult
-    , tutorialState : Maybe TutorialStep
+    , tutorialState : Maybe Evergreen.V22.Tutorial.Types.TutorialStep
     , botDifficultyMenuOpen : Bool
     , botThinking : Bool
     , inMatchmaking : Bool
-    , onlineOpponent : Maybe SessionId
+    , onlineOpponent : Maybe Effect.Lamdera.ClientId
     , isLoading : Bool
     , loadingProgress : Float
-    , backendModel : Maybe BackendModel
     }
 
-
-type alias UserConfig =
-    { t : Translation
-    , c : Theme
-    }
-
-
-type alias ActiveGame =
-    { id : Id GameId
-    , player1 : SessionId
-    , player2 : SessionId
-    , board : BigBoard
-    }
-
-type ClientId = ClientId String
 
 type alias BackendModel =
     { message : String
-    , matchmakingQueue : List SessionId
-    , activeGames : SeqDict (Id GameId) ActiveGame
+    , matchmakingQueue : List Effect.Lamdera.ClientId
+    , activeGames : List ( Effect.Lamdera.ClientId, Effect.Lamdera.ClientId, BigBoard )
     , seed : Random.Seed
-    , clientSessions : Dict String (List String)  -- SessionId -> List ClientId
-    , clientToSession : Dict String String  -- ClientId -> SessionId
     }
 
 
 type FrontendMsg
     = UrlClicked Browser.UrlRequest
-    | UrlChanged Url
+    | UrlChanged Url.Url
     | NoOp
     | CellClicked Int Int
     | BotMove
@@ -147,7 +143,7 @@ type FrontendMsg
     | ReturnToMenu
     | CancelBotDifficulty
     | PlayForMe
-    | ChangeLanguage Language
+    | ChangeLanguage Evergreen.V22.I18n.Language
     | CloseDebugger
     | UndoMove
     | RedoMove
@@ -177,61 +173,25 @@ type FrontendMsg
     | KeyRight
 
 
-type alias LocalStorage =
-    { language : Language
-    , userPreference : UserPreference
-    , systemMode : Mode
-    }
-
-
-localStorageToString : LocalStorage -> String
-localStorageToString localStorage =
-    "language: "
-        ++ languageToString (Just localStorage.language)
-        ++ "\n"
-        ++ "userPreference: "
-        ++ userPreferenceToString localStorage.userPreference localStorage.systemMode
-        ++ "\n"
-
-
 type ToBackend
-    = ClientJoined ClientId SessionId
-    | ClientDisconnected ClientId
-    | RequestBackendModel
-    | JoinMatchmaking SessionId
-    | LeaveMatchmaking SessionId
+    = NoOpToBackend
+    | JoinMatchmaking
+    | LeaveMatchmakingToBackend
+    | AbandonGame
     | MakeMove Int Int Player
-    | AbandonGame SessionId
 
 
 type BackendMsg
-    = ClientConnected SessionId ClientId
-    | ClientDisconnected_ SessionId ClientId
-    | CheckForAbandon SessionId
-    | NoOpBackendMsg
+    = NoOpBackendMsg
     | GotInitialTime Effect.Time.Posix
-    | PlayerDisconnected Effect.Lamdera.SessionId ClientId
+    | PlayerDisconnected Effect.Lamdera.SessionId Effect.Lamdera.ClientId
 
 
 type ToFrontend
     = NoOpToFrontend
-    | GameFound { opponentId : SessionId, playerRole : Player }
+    | GameFound
+        { opponentId : Effect.Lamdera.ClientId
+        , playerRole : Player
+        }
     | OpponentMove Move
     | OpponentLeft
-    | BackendModelReceived BackendModel
-
-
-
--- HELPERS
-
-
-type alias Position =
-    { x : Float
-    , y : Float
-    }
-
-
-type alias Size =
-    { width : Float
-    , height : Float
-    }
