@@ -1,5 +1,6 @@
 module Frontend exposing (..)
 
+import Admin
 import Audio
 import Bot
 import Browser exposing (UrlRequest(..))
@@ -75,9 +76,21 @@ app_ =
 
 init : Url.Url -> Key -> ( FrontendModel, Command FrontendOnly ToBackend FrontendMsg )
 init url key =
+    let
+        route =
+            case url.path of
+                "/admin" ->
+                    Admin
+
+                "/" ->
+                    Home
+
+                _ ->
+                    Home
+    in
     ( { key = key
       , board = initialBoard X
-      , route = Home
+      , route = route
       , language = Nothing
       , userPreference = SystemMode
       , systemMode = Light
@@ -104,10 +117,12 @@ init url key =
       , onlineOpponent = Nothing
       , isLoading = True
       , loadingProgress = 0
+      , backendModel = Nothing
       }
     , Command.batch
         [ LocalStorage.getLocalStorage
         , startLoadingAnimation
+        , Effect.Lamdera.sendToBackend RequestBackendModel
         ]
     )
 
@@ -134,7 +149,25 @@ update msg model =
                     )
 
         UrlChanged url ->
-            ( model, Command.none )
+            let
+                newRoute =
+                    case url.path of
+                        "/admin" ->
+                            Admin
+
+                        "/" ->
+                            Home
+
+                        _ ->
+                            Home
+            in
+            ( { model | route = newRoute }
+            , if newRoute == Admin then
+                Effect.Lamdera.sendToBackend RequestBackendModel
+
+              else
+                Command.none
+            )
 
         CellClicked boardIndex cellIndex ->
             if model.currentMoveIndex < List.length model.moveHistory - 1 then
@@ -177,6 +210,9 @@ update msg model =
                     Home ->
                         ( model, Command.none )
 
+                    Admin ->
+                        ( model, Command.none )
+
         BotMove ->
             case model.route of
                 Game (WithBot difficulty) ->
@@ -215,6 +251,9 @@ update msg model =
                     ( model, Command.none )
 
                 Home ->
+                    ( model, Command.none )
+
+                Admin ->
                     ( model, Command.none )
 
         RestartGame ->
@@ -681,24 +720,24 @@ update msg model =
             update RedoMove model
 
 
-updateFromBackend : ToFrontend -> FrontendModel -> ( FrontendModel, Command FrontendOnly toMsg FrontendMsg )
+updateFromBackend : ToFrontend -> FrontendModel -> ( FrontendModel, Command FrontendOnly ToBackend FrontendMsg )
 updateFromBackend msg model =
     case msg of
         NoOpToFrontend ->
             ( model, Command.none )
 
-        GameFound data ->
+        GameFound { opponentId, playerRole } ->
             ( { model
-                | inMatchmaking = False
-                , onlineOpponent = Just data.opponentId
-                , route = Game OnlineGame
+                | route = Game OnlineGame
                 , board = initialBoard X
-                , onlinePlayer = Just data.playerRole
                 , moveHistory = []
                 , currentMoveIndex = -1
+                , onlinePlayer = Just playerRole
+                , onlineOpponent = Just opponentId
+                , inMatchmaking = False
                 , gameResult = Ongoing
               }
-            , Command.none
+            , Audio.playButtonClick
             )
 
         OpponentMove move ->
@@ -706,66 +745,34 @@ updateFromBackend msg model =
                 newBoard =
                     makeMove model.board move.boardIndex move.cellIndex move.player
 
-                newHistory =
+                newMoveHistory =
                     List.take (model.currentMoveIndex + 1) model.moveHistory ++ [ move ]
-
-                newIndex =
-                    List.length newHistory - 1
-
-                newGameResult =
-                    case newBoard.winner of
-                        Just winner ->
-                            case model.onlinePlayer of
-                                Just myRole ->
-                                    if myRole == winner then
-                                        Won
-
-                                    else
-                                        Lost
-
-                                Nothing ->
-                                    Ongoing
-
-                        Nothing ->
-                            if isBigBoardComplete newBoard then
-                                Drew
-
-                            else
-                                Ongoing
-
-                soundCommand =
-                    let
-                        oldSmallBoard =
-                            List.getAt move.boardIndex model.board.boards
-                                |> Maybe.withDefault GameLogic.emptySmallBoard
-
-                        newSmallBoard =
-                            List.getAt move.boardIndex newBoard.boards
-                                |> Maybe.withDefault GameLogic.emptySmallBoard
-                    in
-                    if newSmallBoard.winner /= Nothing && oldSmallBoard.winner == Nothing then
-                        Audio.playSmallWinSound
-
-                    else
-                        Audio.playMoveSound move.player
             in
             ( { model
                 | board = newBoard
-                , moveHistory = newHistory
-                , currentMoveIndex = newIndex
-                , gameResult = newGameResult
+                , moveHistory = newMoveHistory
+                , currentMoveIndex = model.currentMoveIndex + 1
+                , gameResult =
+                    if newBoard.winner == Just O then
+                        Lost
+
+                    else if newBoard.winner == Just X then
+                        Won
+
+                    else if isBigBoardComplete newBoard then
+                        Drew
+
+                    else
+                        Ongoing
               }
-            , soundCommand
+            , Audio.playMoveSound move.player
             )
 
         OpponentLeft ->
-            ( { model
-                | onlineOpponent = Nothing
-                , onlinePlayer = Nothing
-                , gameResult = Won
-              }
-            , Audio.playWinSound
-            )
+            ( { model | onlineOpponent = Nothing }, Command.none )
+
+        BackendModelReceived backendModel ->
+            ( { model | backendModel = Just backendModel }, Command.none )
 
 
 handlePlayerMove : FrontendModel -> Int -> Int -> ( FrontendModel, Command FrontendOnly ToBackend FrontendMsg )
@@ -1062,6 +1069,9 @@ view model =
                         *:not(.game-symbol) {
                             font-family: 'Press Start 2P', cursive !important;
                         }
+                        .game-symbol {
+                            font-family: Arial, sans-serif;
+                        }
                         @keyframes thinking {
                             0%, 100% { opacity: 0.3; transform: scale(0.8); }
                             50% { opacity: 1; transform: scale(1.2); }
@@ -1085,8 +1095,7 @@ view model =
                             50% { transform: scale(1.05); }
                             100% { transform: scale(1); }
                         }
-                    """
-                    ]
+                        """ ]
                 , div
                     [ style "position" "relative"
                     , style "min-height" "100vh"
@@ -1111,7 +1120,6 @@ view model =
                         , style "opacity"
                             (if model.isLoading then
                                 "0"
-
                              else
                                 "1"
                             )
@@ -1124,28 +1132,40 @@ view model =
 
                             Game mode ->
                                 viewGame userConfig model mode
+                                
+                            Admin ->
+                                case model.backendModel of
+                                    Just backendModel ->
+                                        Admin.view userConfig backendModel
+                                    Nothing ->
+                                        div [ style "padding" "20px", style "text-align" "center" ]
+                                            [ text "Loading admin data..." ]
                          ]
-                            ++ Debugger.view userConfig model
-                            ++ [ if model.gameResult /= Ongoing then
-                                    viewGameResultModal userConfig model
-
-                                 else
-                                    text ""
-                               , if model.rulesModalVisible then
-                                    viewRulesModal userConfig model
-
-                                 else
-                                    text ""
-                               , if model.tutorialState /= Nothing then
-                                    viewTutorialOverlay userConfig model
-
-                                 else
-                                    text ""
-                               ]
+                            ++ (if model.route /= Admin then
+                                    Debugger.view userConfig model
+                                else
+                                    []
+                               )
+                            ++ (if model.route /= Admin then
+                                    [ if model.gameResult /= Ongoing then
+                                        viewGameResultModal userConfig model
+                                     else
+                                        text ""
+                                   , if model.rulesModalVisible then
+                                        viewRulesModal userConfig model
+                                     else
+                                        text ""
+                                   , if model.tutorialState /= Nothing then
+                                        viewTutorialOverlay userConfig model
+                                     else
+                                        text ""
+                                   ]
+                                else
+                                    [ text "" ]
+                               )
                         )
                     , if model.isLoading then
                         viewLoadingScreen userConfig model
-
                       else
                         text ""
                     ]
@@ -2115,7 +2135,7 @@ viewCell ({ t, c } as userConfig) model boardIndex isClickable cellStyles cellIn
                 (if isClickable then
                     1
 
-                else
+                 else
                     0
                 )
                 cellStyles
@@ -2227,7 +2247,7 @@ viewCell ({ t, c } as userConfig) model boardIndex isClickable cellStyles cellIn
                 lastMoveHighlight =
                     if isLastMove then
                         [ style "box-shadow" "inset 0 0 0 2px #4CAF50"
-                        , style "background-color" (c.background ++ "CC")  -- Add some transparency
+                        , style "background-color" (c.background ++ "CC") -- Add some transparency
                         ]
 
                     else
@@ -2553,7 +2573,6 @@ viewLoadingScreen { c, t } model =
                ]
             ++ (if model.isLoading then
                     Animation.fadeIn
-
                 else
                     Animation.fadeOut
                )

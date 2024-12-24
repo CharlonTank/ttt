@@ -3,7 +3,7 @@ module Types exposing (..)
 import Browser exposing (UrlRequest)
 import Dict exposing (Dict)
 import Effect.Browser.Navigation exposing (Key)
-import Effect.Lamdera exposing (ClientId)
+import Effect.Lamdera exposing (ClientId, SessionId)
 import Effect.Time
 import I18n exposing (Language(..), Translation, languageToString)
 import Lamdera.Json as Json
@@ -11,6 +11,8 @@ import Random
 import Theme exposing (..)
 import Tutorial.Types exposing (TutorialStep)
 import Url exposing (Url)
+import SeqDict as Dict exposing (SeqDict)
+import Id exposing (Id(..), GameId(..))
 
 
 type Player
@@ -62,6 +64,7 @@ type GameMode
 type Route
     = Home
     | Game GameMode
+    | Admin
 
 
 type GameResult
@@ -98,9 +101,10 @@ type alias FrontendModel =
     , botDifficultyMenuOpen : Bool
     , botThinking : Bool
     , inMatchmaking : Bool
-    , onlineOpponent : Maybe ClientId
+    , onlineOpponent : Maybe SessionId
     , isLoading : Bool
     , loadingProgress : Float
+    , backendModel : Maybe BackendModel
     }
 
 
@@ -110,11 +114,22 @@ type alias UserConfig =
     }
 
 
+type alias ActiveGame =
+    { id : Id GameId
+    , player1 : SessionId
+    , player2 : SessionId
+    , board : BigBoard
+    }
+
+type ClientId = ClientId String
+
 type alias BackendModel =
     { message : String
-    , matchmakingQueue : List ClientId
-    , activeGames : List ( ClientId, ClientId, BigBoard )
+    , matchmakingQueue : List SessionId
+    , activeGames : SeqDict (Id GameId) ActiveGame
     , seed : Random.Seed
+    , clientSessions : Dict String (List String)  -- SessionId -> List ClientId
+    , clientToSession : Dict String String  -- ClientId -> SessionId
     }
 
 
@@ -180,24 +195,30 @@ localStorageToString localStorage =
 
 
 type ToBackend
-    = NoOpToBackend
-    | JoinMatchmaking
-    | LeaveMatchmakingToBackend
-    | AbandonGame
+    = ClientJoined ClientId SessionId
+    | ClientDisconnected ClientId
+    | RequestBackendModel
+    | JoinMatchmaking SessionId
+    | LeaveMatchmaking SessionId
     | MakeMove Int Int Player
+    | AbandonGame SessionId
 
 
 type BackendMsg
-    = NoOpBackendMsg
+    = ClientConnected SessionId ClientId
+    | ClientDisconnected_ SessionId ClientId
+    | CheckForAbandon SessionId
+    | NoOpBackendMsg
     | GotInitialTime Effect.Time.Posix
     | PlayerDisconnected Effect.Lamdera.SessionId ClientId
 
 
 type ToFrontend
     = NoOpToFrontend
-    | GameFound { opponentId : ClientId, playerRole : Player }
+    | GameFound { opponentId : SessionId, playerRole : Player }
     | OpponentMove Move
     | OpponentLeft
+    | BackendModelReceived BackendModel
 
 
 
