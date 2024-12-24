@@ -100,7 +100,6 @@ type alias FrontendModel =
     , inMatchmaking : Bool
     , onlineOpponent : Maybe ClientId
     , isLoading : Bool
-    , loadingProgress : Float
     }
 
 

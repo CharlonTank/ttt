@@ -103,7 +103,6 @@ init url key =
       , inMatchmaking = False
       , onlineOpponent = Nothing
       , isLoading = True
-      , loadingProgress = 0
       }
     , Command.batch
         [ LocalStorage.getLocalStorage
@@ -1038,27 +1037,26 @@ handlePlayerMove model boardIndex cellIndex =
 
 view : FrontendModel -> Browser.Document FrontendMsg
 view model =
-    case model.language of
-        Nothing ->
-            { title = "Tic-Tac-Toe", body = [ viewLoadingScreen { t = translations EN, c = themes model.userPreference model.systemMode } model ] }
+    let
+        language =
+            model.language
+                |> Maybe.withDefault EN
 
-        Just language ->
-            let
-                ({ c, t } as userConfig) =
-                    { t = translations language
-                    , c = themes model.userPreference model.systemMode
-                    }
-            in
-            { title = t.welcome
-            , body =
-                [ Html.node "link"
-                    [ attribute "rel" "stylesheet"
-                    , attribute "href" "https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
-                    ]
-                    []
-                , Html.node "style"
-                    []
-                    [ text """
+        ({ c, t } as userConfig) =
+            { t = translations language
+            , c = themes model.userPreference model.systemMode
+            }
+    in
+    { title = t.welcome
+    , body =
+        [ Html.node "link"
+            [ attribute "rel" "stylesheet"
+            , attribute "href" "https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+            ]
+            []
+        , Html.node "style"
+            []
+            [ text """
                         *:not(.game-symbol) {
                             font-family: 'Press Start 2P', cursive !important;
                         }
@@ -1086,71 +1084,71 @@ view model =
                             100% { transform: scale(1); }
                         }
                     """
-                    ]
-                , div
-                    [ style "position" "relative"
-                    , style "min-height" "100vh"
-                    , style "width" "100%"
-                    , style "background" c.gradientBackground
-                    ]
-                    [ div
-                        [ style "min-height" "100vh"
-                        , style "background" c.gradientBackground
-                        , style "min-height" "100dvh"
-                        , style "width" "100%"
-                        , style "display" "flex"
-                        , style "align-items" "center"
-                        , style "justify-content" "center"
-                        , style "padding" "env(safe-area-inset-top, 10px) env(safe-area-inset-right, 10px) env(safe-area-inset-bottom, 10px) env(safe-area-inset-left, 10px)"
-                        , style "box-sizing" "border-box"
-                        , style "position" "absolute"
-                        , style "top" "0"
-                        , style "left" "0"
-                        , style "letter-spacing" "1px"
-                        , style "line-height" "1.5"
-                        , style "opacity"
-                            (if model.isLoading then
-                                "0"
+            ]
+        , div
+            [ style "position" "relative"
+            , style "min-height" "100vh"
+            , style "width" "100%"
+            , style "background" c.gradientBackground
+            ]
+            [ div
+                [ style "min-height" "100vh"
+                , style "background" c.gradientBackground
+                , style "min-height" "100dvh"
+                , style "width" "100%"
+                , style "display" "flex"
+                , style "align-items" "center"
+                , style "justify-content" "center"
+                , style "padding" "env(safe-area-inset-top, 10px) env(safe-area-inset-right, 10px) env(safe-area-inset-bottom, 10px) env(safe-area-inset-left, 10px)"
+                , style "box-sizing" "border-box"
+                , style "position" "absolute"
+                , style "top" "0"
+                , style "left" "0"
+                , style "letter-spacing" "1px"
+                , style "line-height" "1.5"
+                , style "opacity"
+                    (if model.isLoading then
+                        "0"
 
-                             else
-                                "1"
-                            )
-                        , style "transition" "opacity 0.3s ease-in"
-                        ]
-                        ([ viewLanguageSelector userConfig model
-                         , case model.route of
-                            Home ->
-                                viewHome userConfig model
-
-                            Game mode ->
-                                viewGame userConfig model mode
-                         ]
-                            ++ Debugger.view userConfig model
-                            ++ [ if model.gameResult /= Ongoing then
-                                    viewGameResultModal userConfig model
-
-                                 else
-                                    text ""
-                               , if model.rulesModalVisible then
-                                    viewRulesModal userConfig model
-
-                                 else
-                                    text ""
-                               , if model.tutorialState /= Nothing then
-                                    viewTutorialOverlay userConfig model
-
-                                 else
-                                    text ""
-                               ]
-                        )
-                    , if model.isLoading then
-                        viewLoadingScreen userConfig model
-
-                      else
-                        text ""
-                    ]
+                     else
+                        "1"
+                    )
+                , style "transition" "opacity 0.3s ease-in"
                 ]
-            }
+                ([ viewLanguageSelector userConfig model
+                 , case model.route of
+                    Home ->
+                        viewHome userConfig model
+
+                    Game mode ->
+                        viewGame userConfig model mode
+                 ]
+                    ++ Debugger.view userConfig model
+                    ++ [ if model.gameResult /= Ongoing then
+                            viewGameResultModal userConfig model
+
+                         else
+                            text ""
+                       , if model.rulesModalVisible then
+                            viewRulesModal userConfig model
+
+                         else
+                            text ""
+                       , if model.tutorialState /= Nothing then
+                            viewTutorialOverlay userConfig model
+
+                         else
+                            text ""
+                       ]
+                )
+            , if model.isLoading then
+                viewLoadingScreen userConfig model
+
+              else
+                text ""
+            ]
+        ]
+    }
 
 
 viewGameButton : UserConfig -> HtmlId -> String -> FrontendMsg -> Html FrontendMsg
@@ -2115,7 +2113,7 @@ viewCell ({ t, c } as userConfig) model boardIndex isClickable cellStyles cellIn
                 (if isClickable then
                     1
 
-                else
+                 else
                     0
                 )
                 cellStyles
@@ -2227,7 +2225,7 @@ viewCell ({ t, c } as userConfig) model boardIndex isClickable cellStyles cellIn
                 lastMoveHighlight =
                     if isLastMove then
                         [ style "box-shadow" "inset 0 0 0 2px #4CAF50"
-                        , style "background-color" (c.background ++ "CC")  -- Add some transparency
+                        , style "background-color" (c.background ++ "CC") -- Add some transparency
                         ]
 
                     else
@@ -2545,17 +2543,17 @@ viewGameResultModal ({ t, c } as userConfig) model =
 
 
 viewLoadingScreen : UserConfig -> FrontendModel -> Html FrontendMsg
-viewLoadingScreen { c, t } model =
+viewLoadingScreen { c } model =
     div
         (Container.fullscreen
             ++ Layout.flexCenter
-            ++ [ style "z-index" "2"
-               ]
-            ++ (if model.isLoading then
-                    Animation.fadeIn
+            ++ (style "z-index" "2"
+                    :: (if model.isLoading then
+                            Animation.fadeIn
 
-                else
-                    Animation.fadeOut
+                        else
+                            Animation.fadeOut
+                       )
                )
         )
         [ div
