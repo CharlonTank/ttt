@@ -1,9 +1,9 @@
-module Palette.Typography exposing (h1, h2, pre, text, loadingTitle, loadingSubtitle, loadingAuthor)
+module Palette.Typography exposing (h1, h2, loadingAuthor, loadingSubtitle, loadingTitle, pre, text)
 
+import Color
 import Html exposing (Attribute, Html)
 import Html.Attributes exposing (style)
 import Theme exposing (Theme)
-import Color
 
 
 h1 : Theme -> String -> Html msg

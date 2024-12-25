@@ -1,8 +1,9 @@
-module Palette.Container exposing (fullscreen, card)
+module Palette.Container exposing (card, fullscreen)
 
 import Html exposing (Attribute)
 import Html.Attributes exposing (style)
 import Theme exposing (Theme)
+
 
 fullscreen : List (Attribute msg)
 fullscreen =
@@ -13,10 +14,11 @@ fullscreen =
     , style "left" "0"
     ]
 
+
 card : Theme -> List (Attribute msg)
 card c =
     [ style "border-radius" "20px"
     , style "box-shadow" "0 10px 30px rgba(0, 0, 0, 0.1)"
     , style "padding" "40px"
     , style "background-color" c.background
-    ] 
+    ]

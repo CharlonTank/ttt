@@ -7,6 +7,7 @@ import Effect.Lamdera exposing (ClientId)
 import Effect.Time
 import I18n exposing (Language(..), Translation, languageToString)
 import Lamdera.Json as Json
+import LocalStorage exposing (LocalStorage)
 import Random
 import Theme exposing (..)
 import Tutorial.Types exposing (TutorialStep)
@@ -75,9 +76,7 @@ type alias FrontendModel =
     { key : Effect.Browser.Navigation.Key
     , board : BigBoard
     , route : Route
-    , language : Maybe Language
-    , userPreference : UserPreference
-    , systemMode : Mode
+    , localStorage : LocalStorage
     , moveHistory : List Move
     , currentMoveIndex : Int
     , rulesModalVisible : Bool
@@ -89,7 +88,6 @@ type alias FrontendModel =
     , dragOffset : Position
     , debuggerSize : Size
     , isResizingDebugger : Bool
-    , localStorage : Maybe LocalStorage
     , selectedDifficulty : Maybe BotDifficulty
     , onlinePlayer : Maybe Player
     , showAbandonConfirm : Bool
@@ -136,6 +134,7 @@ type FrontendMsg
     | UndoMove
     | RedoMove
     | ToggleDarkMode
+    | ToggleSound
     | ToggleDebugMode
     | ReceivedLocalStorage LocalStorage
     | StartDraggingDebugger Float Float
@@ -161,17 +160,10 @@ type FrontendMsg
     | KeyRight
 
 
-type alias LocalStorage =
-    { language : Language
-    , userPreference : UserPreference
-    , systemMode : Mode
-    }
-
-
 localStorageToString : LocalStorage -> String
 localStorageToString localStorage =
     "language: "
-        ++ languageToString (Just localStorage.language)
+        ++ languageToString localStorage.language
         ++ "\n"
         ++ "userPreference: "
         ++ userPreferenceToString localStorage.userPreference localStorage.systemMode

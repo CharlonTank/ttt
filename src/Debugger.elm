@@ -6,6 +6,7 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
 import I18n exposing (languageToString)
 import Json.Decode as D
+import LocalStorage exposing (LocalStorage)
 import Theme exposing (..)
 import Types exposing (..)
 
@@ -70,10 +71,10 @@ view { c } model =
                 , style "padding-right" "10px"
                 ]
                 [ text "Local Storage:\n"
-                , model.localStorage |> Maybe.map localStorageToString |> Maybe.withDefault "" |> text
+                , model.localStorage |> localStorageToString |> text
                 , text "\nModel State:\n"
-                , text <| "language: " ++ (model.language |> languageToString) ++ "\n"
-                , text <| "userPreference: " ++ userPreferenceToString model.userPreference model.systemMode ++ "\n\n"
+                , text <| "language: " ++ (model.localStorage.language |> languageToString) ++ "\n"
+                , text <| "userPreference: " ++ userPreferenceToString model.localStorage.userPreference model.localStorage.systemMode ++ "\n\n"
                 , text "Game State:\n"
                 , text <| boardToString model.board
                 ]
@@ -169,7 +170,7 @@ boardToString board =
 localStorageToString : LocalStorage -> String
 localStorageToString localStorage =
     "language: "
-        ++ languageToString (Just localStorage.language)
+        ++ languageToString localStorage.language
         ++ "\n"
         ++ "userPreference: "
         ++ userPreferenceToString localStorage.userPreference localStorage.systemMode

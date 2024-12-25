@@ -78,9 +78,7 @@ init url key =
     ( { key = key
       , board = initialBoard X
       , route = Home
-      , language = Nothing
-      , userPreference = SystemMode
-      , systemMode = Light
+      , localStorage = LocalStorage.defaultLocalStorage
       , moveHistory = []
       , currentMoveIndex = -1
       , rulesModalVisible = False
@@ -92,7 +90,6 @@ init url key =
       , dragOffset = { x = 0, y = 0 }
       , debuggerSize = { width = 300, height = 200 }
       , isResizingDebugger = False
-      , localStorage = Nothing
       , selectedDifficulty = Nothing
       , onlinePlayer = Nothing
       , showAbandonConfirm = False
@@ -118,7 +115,7 @@ startLoadingAnimation =
 
 
 update : FrontendMsg -> FrontendModel -> ( FrontendModel, Command FrontendOnly ToBackend FrontendMsg )
-update msg model =
+update msg ({ localStorage } as model) =
     case msg of
         UrlClicked urlRequest ->
             case urlRequest of
@@ -233,19 +230,19 @@ update msg model =
                 , currentMoveIndex = -1
                 , gameResult = Ongoing
               }
-            , Audio.playButtonClick
+            , Audio.playButtonClick localStorage
             )
 
         StartGameWithBot ->
             ( { model | botDifficultyMenuOpen = True }
-            , Audio.playButtonClick
+            , Audio.playButtonClick localStorage
             )
 
         SelectBotDifficulty difficulty ->
             ( { model
                 | selectedDifficulty = Just difficulty
               }
-            , Audio.playButtonClick
+            , Audio.playButtonClick localStorage
             )
 
         StartWithPlayer humanStarts ->
@@ -263,12 +260,12 @@ update msg model =
                 cmd =
                     if not humanStarts then
                         Command.batch
-                            [ Audio.playButtonClick
+                            [ Audio.playButtonClick localStorage
                             , Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 500))
                             ]
 
                     else
-                        Audio.playButtonClick
+                        Audio.playButtonClick localStorage
             in
             case model.route of
                 Game (WithBot _) ->
@@ -308,12 +305,12 @@ update msg model =
                 | route = Home
                 , gameResult = Ongoing
               }
-            , Audio.playButtonClick
+            , Audio.playButtonClick localStorage
             )
 
         CancelBotDifficulty ->
             ( { model | botDifficultyMenuOpen = False }
-            , Audio.playButtonClick
+            , Audio.playButtonClick localStorage
             )
 
         PlayForMe ->
@@ -352,21 +349,21 @@ update msg model =
 
         ChangeLanguage lang ->
             let
-                newModel =
-                    { model
-                        | language = Just lang
-                        , frClickCount =
-                            if lang == FR then
-                                model.frClickCount + 1
-
-                            else
-                                model.frClickCount
-                    }
+                newLocalStorage =
+                    { localStorage | language = lang }
             in
-            ( newModel
+            ( { model
+                | localStorage = newLocalStorage
+                , frClickCount =
+                    if lang == FR then
+                        model.frClickCount + 1
+
+                    else
+                        model.frClickCount
+              }
             , Command.batch
-                [ LocalStorage.storeValue (LanguageUpdate lang)
-                , Audio.playButtonClick
+                [ LocalStorage.storeValue (LocalStorage.LanguageUpdate lang)
+                , Audio.playButtonClick localStorage
                 ]
             )
 
@@ -414,7 +411,7 @@ update msg model =
         ToggleDarkMode ->
             let
                 newPreference =
-                    case model.userPreference of
+                    case localStorage.userPreference of
                         DarkMode ->
                             LightMode
 
@@ -424,22 +421,27 @@ update msg model =
                         SystemMode ->
                             DarkMode
             in
-            ( { model | userPreference = newPreference }
+            ( { model | localStorage = { localStorage | userPreference = newPreference } }
             , Command.batch
-                [ LocalStorage.storeValue (ThemePreferenceUpdate newPreference)
-                , Audio.playButtonClick
+                [ LocalStorage.storeValue (LocalStorage.ThemePreferenceUpdate newPreference)
+                , Audio.playButtonClick localStorage
                 ]
+            )
+
+        ToggleSound ->
+            let
+                newLocalStorage =
+                    { localStorage | soundEnabled = not localStorage.soundEnabled }
+            in
+            ( { model | localStorage = newLocalStorage }
+            , LocalStorage.storeValue (LocalStorage.SoundUpdate newLocalStorage.soundEnabled)
             )
 
         ToggleDebugMode ->
             ( model, Command.none )
 
-        ReceivedLocalStorage { language, userPreference, systemMode } ->
-            ( { model
-                | language = Just language
-                , userPreference = userPreference
-                , systemMode = systemMode
-              }
+        ReceivedLocalStorage localStorage_ ->
+            ( { model | localStorage = localStorage_ }
             , Command.none
             )
 
@@ -509,14 +511,14 @@ update msg model =
 
         ToggleRulesModal ->
             ( { model | rulesModalVisible = not model.rulesModalVisible }
-            , Audio.playButtonClick
+            , Audio.playButtonClick localStorage
             )
 
         StartOnlineGame ->
             ( { model | inMatchmaking = True }
             , Command.batch
                 [ Effect.Lamdera.sendToBackend JoinMatchmaking
-                , Audio.playOnlineSound
+                , Audio.playOnlineSound localStorage
                 ]
             )
 
@@ -607,7 +609,7 @@ update msg model =
               }
             , Command.batch
                 [ Effect.Lamdera.sendToBackend AbandonGame
-                , Audio.playLoseSound
+                , Audio.playLoseSound localStorage
                 ]
             )
 
@@ -621,7 +623,7 @@ update msg model =
                 , gameResult = Ongoing
                 , rulesModalVisible = False
               }
-            , Audio.playButtonClick
+            , Audio.playButtonClick localStorage
             )
 
         NextTutorialStep ->
@@ -655,7 +657,7 @@ update msg model =
                                 Nothing ->
                                     initialBoard X
                       }
-                    , Audio.playButtonClick
+                    , Audio.playButtonClick localStorage
                     )
 
                 _ ->
@@ -667,7 +669,7 @@ update msg model =
                 , route = Home
                 , board = initialBoard X
               }
-            , Audio.playButtonClick
+            , Audio.playButtonClick localStorage
             )
 
         LoadingComplete ->
@@ -743,10 +745,10 @@ updateFromBackend msg model =
                                 |> Maybe.withDefault GameLogic.emptySmallBoard
                     in
                     if newSmallBoard.winner /= Nothing && oldSmallBoard.winner == Nothing then
-                        Audio.playSmallWinSound
+                        Audio.playSmallWinSound model.localStorage
 
                     else
-                        Audio.playMoveSound move.player
+                        Audio.playMoveSound model.localStorage move.player
             in
             ( { model
                 | board = newBoard
@@ -763,7 +765,7 @@ updateFromBackend msg model =
                 , onlinePlayer = Nothing
                 , gameResult = Won
               }
-            , Audio.playWinSound
+            , Audio.playWinSound model.localStorage
             )
 
 
@@ -969,13 +971,13 @@ handlePlayerMove model boardIndex cellIndex =
             if canPlayInBoard && isCellEmpty && isSmallBoardAvailable then
                 case newGameResult of
                     Won ->
-                        Audio.playWinSound
+                        Audio.playWinSound model.localStorage
 
                     Lost ->
-                        Audio.playLoseSound
+                        Audio.playLoseSound model.localStorage
 
                     Drew ->
-                        Audio.playDrawSound
+                        Audio.playDrawSound model.localStorage
 
                     Ongoing ->
                         let
@@ -988,13 +990,13 @@ handlePlayerMove model boardIndex cellIndex =
                                     |> Maybe.withDefault GameLogic.emptySmallBoard
                         in
                         if newSmallBoard.winner /= Nothing && oldSmallBoard.winner == Nothing then
-                            Audio.playSmallWinSound
+                            Audio.playSmallWinSound model.localStorage
 
                         else
-                            Audio.playMoveSound board.currentPlayer
+                            Audio.playMoveSound model.localStorage board.currentPlayer
 
             else
-                Audio.playErrorSound
+                Audio.playErrorSound model.localStorage
     in
     if canPlayInBoard && isCellEmpty && isSmallBoardAvailable then
         case model.route of
@@ -1032,19 +1034,15 @@ handlePlayerMove model boardIndex cellIndex =
                 ( updatedModel, soundCommand )
 
     else
-        ( model, Audio.playErrorSound )
+        ( model, Audio.playErrorSound model.localStorage )
 
 
 view : FrontendModel -> Browser.Document FrontendMsg
 view model =
     let
-        language =
-            model.language
-                |> Maybe.withDefault EN
-
         ({ c, t } as userConfig) =
-            { t = translations language
-            , c = themes model.userPreference model.systemMode
+            { t = translations model.localStorage.language
+            , c = themes model.localStorage.userPreference model.localStorage.systemMode
             }
     in
     { title = t.welcome
@@ -1116,6 +1114,7 @@ view model =
                 , style "transition" "opacity 0.3s ease-in"
                 ]
                 ([ viewLanguageSelector userConfig model
+                 , viewSoundButton userConfig model
                  , case model.route of
                     Home ->
                         viewHome userConfig model
@@ -1791,8 +1790,49 @@ viewLanguageSelector ({ t, c } as userConfig) model =
         ]
         [ viewDarkModeButton userConfig model
         , div [ style "width" "1px", style "height" "20px", style "background-color" c.border ] []
-        , viewLanguageButton "FR" FR (model.language == Just FR) (isDark model.userPreference model.systemMode)
-        , viewLanguageButton "EN" EN (model.language == Just EN) (isDark model.userPreference model.systemMode)
+        , viewLanguageButton "FR" FR (model.localStorage.language == FR) (isDark model.localStorage.userPreference model.localStorage.systemMode)
+        , viewLanguageButton "EN" EN (model.localStorage.language == EN) (isDark model.localStorage.userPreference model.localStorage.systemMode)
+        ]
+
+
+viewSoundButton : UserConfig -> FrontendModel -> Html FrontendMsg
+viewSoundButton ({ t, c } as userConfig) model =
+    div
+        [ style "position" "absolute"
+        , style "top" "5px"
+        , style "left" "20px"
+        , style "display" "flex"
+        , style "gap" "10px"
+        , style "align-items" "center"
+        , style "background-color" (Color.withAlpha c.background 0.8)
+        , style "padding" "6px"
+        , style "border-radius" "10px"
+        , style "backdrop-filter" "blur(10px)"
+        , style "box-shadow" "0 2px 10px rgba(0, 0, 0, 0.1)"
+        , style "z-index" "1000"
+        ]
+        [ button
+            [ style "padding" "8px"
+            , style "font-size" "1.1em"
+            , style "background" "none"
+            , style "border" "none"
+            , style "cursor" "pointer"
+            , style "display" "flex"
+            , style "align-items" "center"
+            , style "justify-content" "center"
+            , style "font-family" "inherit"
+            , style "color" c.textHover
+            , style "transition" "all 0.2s ease"
+            , onClick ToggleSound
+            ]
+            [ text
+                (if model.localStorage.soundEnabled then
+                    "🔊"
+
+                 else
+                    "🔇"
+                )
+            ]
         ]
 
 
@@ -1813,7 +1853,7 @@ viewDarkModeButton ({ t, c } as userConfig) model =
         , onClick ToggleDarkMode
         ]
         [ text
-            (case model.userPreference of
+            (case model.localStorage.userPreference of
                 DarkMode ->
                     "🌙"
 
@@ -1881,7 +1921,7 @@ refactoredVersionOfViewLanguageSelector { c } selectedLang lang =
         , style "transition" "all 0.2s ease"
         , onClick (ChangeLanguage lang)
         ]
-        [ Just lang |> languageToString |> String.toUpper |> text ]
+        [ lang |> languageToString |> String.toUpper |> text ]
 
 
 viewBigBoard : UserConfig -> FrontendModel -> Html FrontendMsg
@@ -2192,7 +2232,12 @@ viewCell ({ t, c } as userConfig) model boardIndex isClickable cellStyles cellIn
 
                 cursor =
                     if isCellClickable then
-                        "pointer"
+                        case model.board.currentPlayer of
+                            X ->
+                                "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 100 100' fill='none' stroke='%23dc3545' stroke-width='10' stroke-linecap='round'%3E%3Cline x1='20' y1='20' x2='80' y2='80'/%3E%3Cline x1='80' y1='20' x2='20' y2='80'/%3E%3C/svg%3E\") 12 12, pointer"
+
+                            O ->
+                                "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 100 100' fill='none' stroke='%230d6efd' stroke-width='10' stroke-linecap='round'%3E%3Ccircle cx='50' cy='50' r='35'/%3E%3C/svg%3E\") 12 12, pointer"
 
                     else
                         "default"
