@@ -1,6 +1,7 @@
 module Frontend exposing (..)
 
 import Audio
+import Audio exposing (Sound(..), playSound)
 import Bot
 import Browser exposing (UrlRequest(..))
 import Color
@@ -230,19 +231,19 @@ update msg ({ localStorage } as model) =
                 , currentMoveIndex = -1
                 , gameResult = Ongoing
               }
-            , Audio.playButtonClick localStorage
+            , Audio.playSound ButtonClickSound
             )
 
         StartGameWithBot ->
             ( { model | botDifficultyMenuOpen = True }
-            , Audio.playButtonClick localStorage
+            , Audio.playSound ButtonClickSound
             )
 
         SelectBotDifficulty difficulty ->
             ( { model
                 | selectedDifficulty = Just difficulty
               }
-            , Audio.playButtonClick localStorage
+            , Audio.playSound ButtonClickSound
             )
 
         StartWithPlayer humanStarts ->
@@ -260,12 +261,12 @@ update msg ({ localStorage } as model) =
                 cmd =
                     if not humanStarts then
                         Command.batch
-                            [ Audio.playButtonClick localStorage
+                            [ Audio.playSound ButtonClickSound
                             , Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 500))
                             ]
 
                     else
-                        Audio.playButtonClick localStorage
+                        Audio.playSound ButtonClickSound
             in
             case model.route of
                 Game (WithBot _) ->
@@ -305,12 +306,12 @@ update msg ({ localStorage } as model) =
                 | route = Home
                 , gameResult = Ongoing
               }
-            , Audio.playButtonClick localStorage
+            , Audio.playSound ButtonClickSound
             )
 
         CancelBotDifficulty ->
             ( { model | botDifficultyMenuOpen = False }
-            , Audio.playButtonClick localStorage
+            , Audio.playSound ButtonClickSound
             )
 
         PlayForMe ->
@@ -363,7 +364,7 @@ update msg ({ localStorage } as model) =
               }
             , Command.batch
                 [ LocalStorage.storeValue (LocalStorage.LanguageUpdate lang)
-                , Audio.playButtonClick localStorage
+                , Audio.playSound ButtonClickSound
                 ]
             )
 
@@ -424,7 +425,7 @@ update msg ({ localStorage } as model) =
             ( { model | localStorage = { localStorage | userPreference = newPreference } }
             , Command.batch
                 [ LocalStorage.storeValue (LocalStorage.ThemePreferenceUpdate newPreference)
-                , Audio.playButtonClick localStorage
+                , Audio.playSound ButtonClickSound
                 ]
             )
 
@@ -511,14 +512,14 @@ update msg ({ localStorage } as model) =
 
         ToggleRulesModal ->
             ( { model | rulesModalVisible = not model.rulesModalVisible }
-            , Audio.playButtonClick localStorage
+            , Audio.playSound ButtonClickSound
             )
 
         StartOnlineGame ->
             ( { model | inMatchmaking = True }
             , Command.batch
                 [ Effect.Lamdera.sendToBackend JoinMatchmaking
-                , Audio.playOnlineSound localStorage
+                , Audio.playSound PlayOnlineSound
                 ]
             )
 
@@ -609,7 +610,7 @@ update msg ({ localStorage } as model) =
               }
             , Command.batch
                 [ Effect.Lamdera.sendToBackend AbandonGame
-                , Audio.playLoseSound localStorage
+                , Audio.playSound LoseSound
                 ]
             )
 
@@ -623,7 +624,7 @@ update msg ({ localStorage } as model) =
                 , gameResult = Ongoing
                 , rulesModalVisible = False
               }
-            , Audio.playButtonClick localStorage
+            , Audio.playSound ButtonClickSound
             )
 
         NextTutorialStep ->
@@ -657,7 +658,7 @@ update msg ({ localStorage } as model) =
                                 Nothing ->
                                     initialBoard X
                       }
-                    , Audio.playButtonClick localStorage
+                    , Audio.playSound ButtonClickSound
                     )
 
                 _ ->
@@ -669,7 +670,7 @@ update msg ({ localStorage } as model) =
                 , route = Home
                 , board = initialBoard X
               }
-            , Audio.playButtonClick localStorage
+            , Audio.playSound ButtonClickSound
             )
 
         LoadingComplete ->
@@ -745,10 +746,10 @@ updateFromBackend msg model =
                                 |> Maybe.withDefault GameLogic.emptySmallBoard
                     in
                     if newSmallBoard.winner /= Nothing && oldSmallBoard.winner == Nothing then
-                        Audio.playSmallWinSound model.localStorage
+                        Audio.playSound SmallWinSound
 
                     else
-                        Audio.playMoveSound model.localStorage move.player
+                        Audio.playSound (MoveSound move.player)
             in
             ( { model
                 | board = newBoard
@@ -765,7 +766,7 @@ updateFromBackend msg model =
                 , onlinePlayer = Nothing
                 , gameResult = Won
               }
-            , Audio.playWinSound model.localStorage
+            , Audio.playSound WinSound
             )
 
 
@@ -971,13 +972,13 @@ handlePlayerMove model boardIndex cellIndex =
             if canPlayInBoard && isCellEmpty && isSmallBoardAvailable then
                 case newGameResult of
                     Won ->
-                        Audio.playWinSound model.localStorage
+                        Audio.playSound WinSound
 
                     Lost ->
-                        Audio.playLoseSound model.localStorage
+                        Audio.playSound LoseSound
 
                     Drew ->
-                        Audio.playDrawSound model.localStorage
+                        Audio.playSound DrawSound
 
                     Ongoing ->
                         let
@@ -990,13 +991,13 @@ handlePlayerMove model boardIndex cellIndex =
                                     |> Maybe.withDefault GameLogic.emptySmallBoard
                         in
                         if newSmallBoard.winner /= Nothing && oldSmallBoard.winner == Nothing then
-                            Audio.playSmallWinSound model.localStorage
+                            Audio.playSound SmallWinSound
 
                         else
-                            Audio.playMoveSound model.localStorage board.currentPlayer
+                            Audio.playSound (MoveSound board.currentPlayer)
 
             else
-                Audio.playErrorSound model.localStorage
+                Audio.playSound ErrorSound
     in
     if canPlayInBoard && isCellEmpty && isSmallBoardAvailable then
         case model.route of
@@ -1034,7 +1035,7 @@ handlePlayerMove model boardIndex cellIndex =
                 ( updatedModel, soundCommand )
 
     else
-        ( model, Audio.playErrorSound model.localStorage )
+        ( model, Audio.playSound ErrorSound )
 
 
 view : FrontendModel -> Browser.Document FrontendMsg

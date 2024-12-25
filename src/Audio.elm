@@ -1,100 +1,61 @@
 port module Audio exposing
-    ( playButtonClick
-    , playDrawSound
-    , playErrorSound
-    , playLoseSound
-    , playMoveSound
-    , playOnlineSound
-    , playSmallWinSound
-    , playWinSound
+    ( Sound(..)
+    , playSound
     )
 
 import Effect.Command as Command exposing (Command, FrontendOnly)
 import Json.Encode as E
-import LocalStorage exposing (LocalStorage)
 import Types exposing (Player(..))
 
 
 port playSound_ : E.Value -> Cmd msg
 
 
-playButtonClick : LocalStorage -> Command FrontendOnly toMsg msg
-playButtonClick localStorage =
-    if localStorage.soundEnabled then
-        Command.sendToJs "playSound_" playSound_ (E.string "button-click")
-
-    else
-        Command.none
-
-
-playWinSound : LocalStorage -> Command FrontendOnly toMsg msg
-playWinSound localStorage =
-    if localStorage.soundEnabled then
-        Command.sendToJs "playSound_" playSound_ (E.string "win")
-
-    else
-        Command.none
+type Sound
+    = ButtonClickSound
+    | WinSound
+    | LoseSound
+    | DrawSound
+    | MoveSound Player
+    | ErrorSound
+    | SmallWinSound
+    | PlayOnlineSound
 
 
-playLoseSound : LocalStorage -> Command FrontendOnly toMsg msg
-playLoseSound localStorage =
-    if localStorage.soundEnabled then
-        Command.sendToJs "playSound_" playSound_ (E.string "lose")
+soundToString : Sound -> String
+soundToString sound =
+    case sound of
+        ButtonClickSound ->
+            "button-click"
 
-    else
-        Command.none
+        WinSound ->
+            "win"
 
+        LoseSound ->
+            "lose"
 
-playDrawSound : LocalStorage -> Command FrontendOnly toMsg msg
-playDrawSound localStorage =
-    if localStorage.soundEnabled then
-        Command.sendToJs "playSound_" playSound_ (E.string "draw")
+        DrawSound ->
+            "draw"
 
-    else
-        Command.none
+        MoveSound player ->
+            case player of
+                X ->
+                    "move-x"
 
+                O ->
+                    "move-o"
 
-playMoveSound : LocalStorage -> Player -> Command FrontendOnly toMsg msg
-playMoveSound localStorage player =
-    if localStorage.soundEnabled then
-        Command.sendToJs "playSound_"
-            playSound_
-            (E.string
-                (case player of
-                    X ->
-                        "move-x"
+        ErrorSound ->
+            "error"
 
-                    O ->
-                        "move-o"
-                )
-            )
+        SmallWinSound ->
+            "small-win"
 
-    else
-        Command.none
+        PlayOnlineSound ->
+            "play-online"
 
 
-playErrorSound : LocalStorage -> Command FrontendOnly toMsg msg
-playErrorSound localStorage =
-    if localStorage.soundEnabled then
-        Command.sendToJs "playSound_" playSound_ (E.string "error")
+playSound : Sound -> Command FrontendOnly toMsg msg
+playSound sound =
+    Command.sendToJs "playSound_" playSound_ (E.string (soundToString sound))
 
-    else
-        Command.none
-
-
-playSmallWinSound : LocalStorage -> Command FrontendOnly toMsg msg
-playSmallWinSound localStorage =
-    if localStorage.soundEnabled then
-        Command.sendToJs "playSound_" playSound_ (E.string "small-win")
-
-    else
-        Command.none
-
-
-playOnlineSound : LocalStorage -> Command FrontendOnly toMsg msg
-playOnlineSound localStorage =
-    if localStorage.soundEnabled then
-        Command.sendToJs "playSound_" playSound_ (E.string "play-online")
-
-    else
-        Command.none

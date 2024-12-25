@@ -95,7 +95,10 @@ exports.init = async function (app) {
 
     // Subscribe to port
     app.ports.playSound_.subscribe(function(soundName) {
-        console.log("Playing sound:", soundName);
-        playSound(soundName);
+        const soundEnabled = JSON.parse(localStorage.getItem('soundEnabled') || 'true');
+        if (soundEnabled) {
+            console.log("Playing sound:", soundName);
+            playSound(soundName);
+        }
     });
 }; 
