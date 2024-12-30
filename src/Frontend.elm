@@ -1,6 +1,5 @@
 module Frontend exposing (..)
 
-import Audio
 import Audio exposing (Sound(..), playSound)
 import Bot
 import Browser exposing (UrlRequest(..))
@@ -1056,8 +1055,8 @@ view model =
         , Html.node "style"
             []
             [ text """
-                        *:not(.game-symbol) {
-                            font-family: 'Press Start 2P', cursive !important;
+                        body {
+                            font-family: 'Press Start 2P', cursive;
                         }
                         @keyframes thinking {
                             0%, 100% { opacity: 0.3; transform: scale(0.8); }
@@ -1089,6 +1088,7 @@ view model =
             , style "min-height" "100vh"
             , style "width" "100%"
             , style "background" c.gradientBackground
+            , class "game-container"
             ]
             [ div
                 [ style "min-height" "100vh"
@@ -1165,6 +1165,52 @@ viewGameButton userConfig htmlId label msg =
         [ text label ]
 
 
+playOnlineButton : UserConfig -> FrontendModel -> Html FrontendMsg
+playOnlineButton ({t} as userConfig) model =
+    div
+        Layout.flexColumnCenter
+        [ button
+            (Button.primary userConfig
+                ++ Button.withShadow
+                ++ (if model.inMatchmaking then
+                        Button.disabled
+
+                    else
+                        []
+                   )
+                ++ Utils.margin10
+                ++ Utils.fullWidth
+                ++ Utils.maxWidth 300
+                ++ [ onClick
+                        (if model.inMatchmaking then
+                            LeaveMatchmaking
+
+                         else
+                            StartOnlineGame
+                        )
+                   , Dom.idToAttribute <|
+                        Dom.id
+                            (if model.inMatchmaking then
+                                "leave-matchmaking-button"
+
+                             else
+                                "start-online-game-button"
+                            )
+                   ]
+            )
+            [ if model.inMatchmaking then
+                div
+                    Layout.flexCenterWithGap
+                    [ text t.searching
+                    , viewThinkingIndicator
+                    ]
+
+              else
+                text t.playOnline
+            ]
+        ]
+
+
 viewHome : UserConfig -> FrontendModel -> Html FrontendMsg
 viewHome ({ t, c } as userConfig) model =
     div
@@ -1182,51 +1228,10 @@ viewHome ({ t, c } as userConfig) model =
             div []
                 [ T.h1 c t.welcome
                 , T.text c t.description
-                , div
-                    Layout.flexColumnCenter
-                    [ viewGameButton userConfig (Dom.id "gameWithFriend") t.playWithFriend StartGameWithFriend
-                    , viewGameButton userConfig (Dom.id "gameWithBot") t.playWithBot StartGameWithBot
-                    , viewGameButton userConfig (Dom.id "toggleRules") t.rulesTitle ToggleRulesModal
-                    , button
-                        (Button.secondary userConfig
-                            ++ Button.withShadow
-                            ++ (if model.inMatchmaking then
-                                    Button.disabled
-
-                                else
-                                    []
-                               )
-                            ++ Utils.margin10
-                            ++ Utils.fullWidth
-                            ++ Utils.maxWidth 300
-                            ++ [ onClick
-                                    (if model.inMatchmaking then
-                                        LeaveMatchmaking
-
-                                     else
-                                        StartOnlineGame
-                                    )
-                               , Dom.idToAttribute <|
-                                    Dom.id
-                                        (if model.inMatchmaking then
-                                            "leave-matchmaking-button"
-
-                                         else
-                                            "start-online-game-button"
-                                        )
-                               ]
-                        )
-                        [ if model.inMatchmaking then
-                            div
-                                Layout.flexCenterWithGap
-                                [ text t.searching
-                                , viewThinkingIndicator
-                                ]
-
-                          else
-                            text t.playOnline
-                        ]
-                    ]
+                , playOnlineButton userConfig model
+                , viewGameButton userConfig (Dom.id "gameWithBot") t.playWithBot StartGameWithBot
+                , viewGameButton userConfig (Dom.id "toggleRules") t.rulesTitle ToggleRulesModal
+                , viewGameButton userConfig (Dom.id "gameWithFriend") t.playWithFriend StartGameWithFriend
                 ]
         , if model.rulesModalVisible then
             viewRulesModal userConfig model
