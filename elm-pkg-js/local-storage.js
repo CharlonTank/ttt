@@ -28,7 +28,8 @@ exports.init = async function (app) {
                         if (stored === 'system-dark' || stored === 'system-light') return 'system';
                         return 'system';
                     })(),
-                    systemMode: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+                    systemMode: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
+                    soundEnabled: localStorage.getItem('soundEnabled') === 'true'
                 }
             });
         } catch (e) {

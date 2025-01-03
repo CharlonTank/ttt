@@ -1,9 +1,10 @@
-module Palette.Modal exposing (overlay, container)
+module Palette.Modal exposing (container, overlay)
 
 import Html exposing (Attribute)
 import Html.Attributes exposing (style)
-import Theme exposing (Theme)
 import Palette.Animation as Animation
+import Theme exposing (Theme)
+
 
 overlay : List (Attribute msg)
 overlay =
@@ -19,10 +20,12 @@ overlay =
     , style "z-index" "1000"
     ]
 
+
 container : Theme -> List (Attribute msg)
 container c =
     [ style "background-color" c.background
     , style "padding" "30px"
     , style "border-radius" "15px"
     , style "text-align" "center"
-    ] ++ Animation.slideIn 
+    ]
+        ++ Animation.slideIn

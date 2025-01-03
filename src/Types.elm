@@ -1,18 +1,18 @@
 module Types exposing (..)
 
 import Browser exposing (UrlRequest)
-import Dict exposing (Dict)
 import Effect.Browser.Navigation exposing (Key)
 import Effect.Lamdera exposing (ClientId, SessionId)
 import Effect.Time
 import I18n exposing (Language(..), Translation, languageToString)
+import Id exposing (GameId(..), Id(..))
 import Lamdera.Json as Json
+import LocalStorage exposing (LocalStorage)
 import Random
+import SeqDict as Dict exposing (SeqDict)
 import Theme exposing (..)
 import Tutorial.Types exposing (TutorialStep)
 import Url exposing (Url)
-import SeqDict as Dict exposing (SeqDict)
-import Id exposing (Id(..), GameId(..))
 
 
 type Player
@@ -34,17 +34,6 @@ type alias SmallBoard =
 type alias Move =
     { boardIndex : Int
     , cellIndex : Int
-    , player : Player
-    }
-
-
-type alias BigBoard =
-    { boards : List SmallBoard
-    , currentPlayer : Player
-    , activeBoard : Maybe Int
-    , winner : Maybe Player
-    , initialPlayer : Player
-    , lastMove : Maybe Move
     }
 
 
@@ -58,33 +47,28 @@ type BotDifficulty
 type GameMode
     = WithFriend
     | WithBot BotDifficulty
-    | OnlineGame
+    | OnlineGameMode
 
 
 type Route
-    = Home
-    | Game GameMode
-    | Admin
+    = HomeRoute
+    | GameRoute GameMode
+    | AdminRoute
+    | TutorialRoute
 
 
 type GameResult
     = Won
     | Lost
-    | Drew
-    | Ongoing
+    | Draw
 
 
 type alias FrontendModel =
     { key : Effect.Browser.Navigation.Key
-    , board : BigBoard
     , route : Route
-    , language : Maybe Language
-    , userPreference : UserPreference
-    , systemMode : Mode
-    , moveHistory : List Move
-    , currentMoveIndex : Int
+    , localStorage : LocalStorage
+    , seed : Maybe Random.Seed
     , rulesModalVisible : Bool
-    , humanPlaysFirst : Bool
     , frClickCount : Int
     , debuggerVisible : Bool
     , debuggerPosition : Position
@@ -92,19 +76,14 @@ type alias FrontendModel =
     , dragOffset : Position
     , debuggerSize : Size
     , isResizingDebugger : Bool
-    , localStorage : Maybe LocalStorage
     , selectedDifficulty : Maybe BotDifficulty
-    , onlinePlayer : Maybe Player
     , showAbandonConfirm : Bool
-    , gameResult : GameResult
     , tutorialState : Maybe TutorialStep
     , botDifficultyMenuOpen : Bool
-    , botThinking : Bool
     , inMatchmaking : Bool
-    , onlineOpponent : Maybe SessionId
     , isLoading : Bool
-    , loadingProgress : Float
     , backendModel : Maybe BackendModel
+    , frontendGame : Maybe FrontendGame
     }
 
 
@@ -114,22 +93,59 @@ type alias UserConfig =
     }
 
 
-type alias ActiveGame =
+type alias OnlineGame =
     { id : Id GameId
-    , player1 : SessionId
-    , player2 : SessionId
-    , board : BigBoard
+    , playerX : SessionId
+    , playerO : SessionId
+    , boards : List SmallBoard
+    , currentPlayer : Player
+    , activeBoard : Maybe Int
+    , winner : Maybe Player
+    , lastMove : Maybe Move
+    , moveHistory : List Move
+    , currentMoveIndex : Int
     }
 
-type ClientId = ClientId String
+
+type Opponent
+    = OnlineOpponent SessionId
+    | BotOpponent BotDifficulty
+    | FriendOpponent
+
+
+type alias FrontendGame =
+    { opponent : Opponent
+    , boards : List SmallBoard
+    , currentPlayer : Player
+    , self : Maybe Player
+    , activeBoard : Maybe Int
+    , lastMove : Maybe Move
+    , moveHistory : List Move
+    , currentMoveIndex : Int
+    , winner : Maybe Player
+    , gameResult : Maybe GameResult
+    , botIsPlaying : Bool
+    }
+
+
+type alias SessionRecord =
+    { clientIds : List ClientId
+    , activity : Activity
+    }
+
+
+type Activity
+    = InQueue
+    | InGame (Id GameId)
+    | Available
+
 
 type alias BackendModel =
-    { message : String
-    , matchmakingQueue : List SessionId
-    , activeGames : SeqDict (Id GameId) ActiveGame
+    { matchmakingQueue : List SessionId
+    , activeGames : SeqDict (Id GameId) OnlineGame
+    , finishedGames : SeqDict (Id GameId) OnlineGame
     , seed : Random.Seed
-    , clientSessions : Dict String (List String)  -- SessionId -> List ClientId
-    , clientToSession : Dict String String  -- ClientId -> SessionId
+    , sessions : SeqDict SessionId SessionRecord
     }
 
 
@@ -137,21 +153,22 @@ type FrontendMsg
     = UrlClicked Browser.UrlRequest
     | UrlChanged Url
     | NoOp
-    | CellClicked Int Int
+    | CellClicked Move
     | BotMove
     | RestartGame
     | StartGameWithFriend
     | StartGameWithBot
     | SelectBotDifficulty BotDifficulty
-    | StartWithPlayer Bool
+    | StartBotGame BotDifficulty FirstPlayer
     | ReturnToMenu
     | CancelBotDifficulty
-    | PlayForMe
+    | PlayForMeAgainstTheBot
     | ChangeLanguage Language
     | CloseDebugger
     | UndoMove
     | RedoMove
     | ToggleDarkMode
+    | ToggleSound
     | ToggleDebugMode
     | ReceivedLocalStorage LocalStorage
     | StartDraggingDebugger Float Float
@@ -162,12 +179,11 @@ type FrontendMsg
     | ResizeDebugger Float Float
     | ToggleRulesModal
     | StartOnlineGame
-    | StartWithRandomPlayer
     | GotTime Effect.Time.Posix
     | Tick Effect.Time.Posix
     | ShowAbandonConfirm
     | HideAbandonConfirm
-    | ConfirmAbandon
+    | ConfirmAbandon FrontendGame
     | StartTutorial
     | NextTutorialStep
     | CompleteTutorial
@@ -177,17 +193,16 @@ type FrontendMsg
     | KeyRight
 
 
-type alias LocalStorage =
-    { language : Language
-    , userPreference : UserPreference
-    , systemMode : Mode
-    }
+type FirstPlayer
+    = HumanBegins
+    | BotBegins
+    | RandomBegins
 
 
 localStorageToString : LocalStorage -> String
 localStorageToString localStorage =
     "language: "
-        ++ languageToString (Just localStorage.language)
+        ++ languageToString localStorage.language
         ++ "\n"
         ++ "userPreference: "
         ++ userPreferenceToString localStorage.userPreference localStorage.systemMode
@@ -195,30 +210,27 @@ localStorageToString localStorage =
 
 
 type ToBackend
-    = ClientJoined ClientId SessionId
-    | ClientDisconnected ClientId
-    | RequestBackendModel
-    | JoinMatchmaking SessionId
-    | LeaveMatchmaking SessionId
-    | MakeMove Int Int Player
-    | AbandonGame SessionId
+    = NoOpToBackend
+    | RequestBackendModelToBackend
+    | JoinMatchmakingToBackend
+    | LeaveMatchmakingToBackend
+    | MakeMoveToBackend Move
+    | AbandonGameToBackend
 
 
 type BackendMsg
-    = ClientConnected SessionId ClientId
-    | ClientDisconnected_ SessionId ClientId
-    | CheckForAbandon SessionId
-    | NoOpBackendMsg
-    | GotInitialTime Effect.Time.Posix
-    | PlayerDisconnected Effect.Lamdera.SessionId ClientId
+    = NoOpBackendMsg
+    | ClientConnected SessionId ClientId
+    | ClientDisconnected SessionId ClientId
 
 
 type ToFrontend
     = NoOpToFrontend
-    | GameFound { opponentId : SessionId, playerRole : Player }
-    | OpponentMove Move
-    | OpponentLeft
-    | BackendModelReceived BackendModel
+    | GameFoundToFrontend { opponentId : SessionId, playerRole : Player }
+    | OpponentMoveToFrontend Move
+    | OpponentLeftToFrontend FrontendGame
+    | BackendModelReceivedToFrontend BackendModel
+    | SendGameToFrontend FrontendGame
 
 
 

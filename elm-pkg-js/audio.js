@@ -6,7 +6,6 @@ exports.init = async function (app) {
         'win': 0.5,
         'small-win': 0.5,
         'error': 0.5,
-        'big-win': 0.5,
         'lose': 0.5,
         'default': 0.5,
         'button-click': 0.2,
@@ -34,7 +33,6 @@ exports.init = async function (app) {
             'error': '/sounds/error.mp3',
             'small-win': '/sounds/small-win.mp3',
             'play-online': '/sounds/play-online.mp3',
-            'big-win': '/sounds/big-win.mp3',
             'lose': '/sounds/lose.wav',
             'sound-1': '/sounds/1.wav',
             'sound-2': '/sounds/2.wav',
@@ -97,7 +95,10 @@ exports.init = async function (app) {
 
     // Subscribe to port
     app.ports.playSound_.subscribe(function(soundName) {
-        console.log("Playing sound:", soundName);
-        playSound(soundName);
+        const soundEnabled = JSON.parse(localStorage.getItem('soundEnabled') || 'true');
+        if (soundEnabled) {
+            console.log("Playing sound:", soundName);
+            playSound(soundName);
+        }
     });
 }; 

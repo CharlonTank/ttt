@@ -1,6 +1,7 @@
 port module LocalStorage exposing
     ( LocalStorage
     , LocalStorageUpdate(..)
+    , default
     , getLocalStorage
     , localStorageDecoder
     , receiveLocalStorage
@@ -30,12 +31,14 @@ type alias LocalStorage =
     { language : Language
     , userPreference : UserPreference
     , systemMode : Mode
+    , soundEnabled : Bool
     }
 
 
 type LocalStorageUpdate
     = LanguageUpdate Language
     | ThemePreferenceUpdate UserPreference
+    | SoundUpdate Bool
 
 
 storeValue : LocalStorageUpdate -> Command FrontendOnly toMsg msg
@@ -46,7 +49,7 @@ storeValue update =
             case update of
                 LanguageUpdate lang ->
                     [ ( "key", E.string "language" )
-                    , ( "value", E.string (languageToString (Just lang)) )
+                    , ( "value", E.string (languageToString lang) )
                     ]
 
                 ThemePreferenceUpdate preference ->
@@ -65,6 +68,11 @@ storeValue update =
                             )
                       )
                     ]
+
+                SoundUpdate enabled ->
+                    [ ( "key", E.string "soundEnabled" )
+                    , ( "value", E.bool enabled )
+                    ]
         )
 
 
@@ -73,16 +81,17 @@ receiveLocalStorage msg =
     Subscription.fromJs "receiveLocalStorage_"
         receiveLocalStorage_
         (Json.decodeValue (D.field "localStorage" localStorageDecoder)
-            >> Result.withDefault defaultLocalStorage
+            >> Result.withDefault default
             >> msg
         )
 
 
-defaultLocalStorage : LocalStorage
-defaultLocalStorage =
+default : LocalStorage
+default =
     { language = EN
-    , userPreference = SystemMode -- Start with system mode by default
+    , userPreference = SystemMode
     , systemMode = Light
+    , soundEnabled = True
     }
 
 
@@ -92,6 +101,7 @@ localStorageDecoder =
         |> D.required "language" (D.string |> D.map stringToLanguage)
         |> D.required "userPreference" (D.string |> D.map stringToUserPreference)
         |> D.required "systemMode" (D.string |> D.map stringToMode)
+        |> D.required "soundEnabled" D.bool
 
 
 stringToMode : String -> Mode

@@ -1,7 +1,7 @@
 module Frontend exposing (..)
 
-import Admin
-import Audio
+import Admin exposing (view)
+import Audio exposing (Sound(..))
 import Bot
 import Browser exposing (UrlRequest(..))
 import Color
@@ -20,10 +20,9 @@ import Effect.Time
 import GameLogic
     exposing
         ( checkBigBoardWinner
-        , checkWinner
+        , checkSmallBoardWinner
         , emptySmallBoard
         , getAllAvailableMoves
-        , initialBoard
         , isBigBoardComplete
         , isSmallBoardComplete
         , isValidMove
@@ -46,6 +45,8 @@ import Palette.Layout as Layout
 import Palette.Modal as Modal
 import Palette.Typography as T
 import Palette.Utils as Utils
+import Random
+import Random.Extra
 import String
 import Svg exposing (Svg, circle, line, svg)
 import Svg.Attributes
@@ -77,52 +78,47 @@ app_ =
 init : Url.Url -> Key -> ( FrontendModel, Command FrontendOnly ToBackend FrontendMsg )
 init url key =
     let
+        initModel : FrontendModel
+        initModel =
+            { key = key
+            , route = route
+            , localStorage = LocalStorage.default
+            , seed = Nothing
+            , rulesModalVisible = False
+            , frClickCount = 0
+            , debuggerVisible = False
+            , debuggerPosition = { x = 0, y = 0 }
+            , isDraggingDebugger = False
+            , dragOffset = { x = 0, y = 0 }
+            , debuggerSize = { width = 300, height = 200 }
+            , isResizingDebugger = False
+            , selectedDifficulty = Nothing
+            , showAbandonConfirm = False
+            , tutorialState = Nothing
+            , botDifficultyMenuOpen = False
+            , inMatchmaking = False
+            , isLoading = True
+            , backendModel = Nothing
+            , frontendGame = Nothing
+            }
+
         route =
             case url.path of
                 "/admin" ->
-                    Admin
+                    AdminRoute
 
                 "/" ->
-                    Home
+                    HomeRoute
 
                 _ ->
-                    Home
+                    HomeRoute
     in
-    ( { key = key
-      , board = initialBoard X
-      , route = route
-      , language = Nothing
-      , userPreference = SystemMode
-      , systemMode = Light
-      , moveHistory = []
-      , currentMoveIndex = -1
-      , rulesModalVisible = False
-      , humanPlaysFirst = True
-      , frClickCount = 0
-      , debuggerVisible = False
-      , debuggerPosition = { x = 0, y = 0 }
-      , isDraggingDebugger = False
-      , dragOffset = { x = 0, y = 0 }
-      , debuggerSize = { width = 300, height = 200 }
-      , isResizingDebugger = False
-      , localStorage = Nothing
-      , selectedDifficulty = Nothing
-      , onlinePlayer = Nothing
-      , showAbandonConfirm = False
-      , gameResult = Ongoing
-      , tutorialState = Nothing
-      , botDifficultyMenuOpen = False
-      , botThinking = False
-      , inMatchmaking = False
-      , onlineOpponent = Nothing
-      , isLoading = True
-      , loadingProgress = 0
-      , backendModel = Nothing
-      }
+    ( initModel
     , Command.batch
         [ LocalStorage.getLocalStorage
         , startLoadingAnimation
-        , Effect.Lamdera.sendToBackend RequestBackendModel
+        , Effect.Lamdera.sendToBackend RequestBackendModelToBackend
+        , Effect.Task.perform GotTime Effect.Time.now
         ]
     )
 
@@ -134,7 +130,7 @@ startLoadingAnimation =
 
 
 update : FrontendMsg -> FrontendModel -> ( FrontendModel, Command FrontendOnly ToBackend FrontendMsg )
-update msg model =
+update msg ({ localStorage } as model) =
     case msg of
         UrlClicked urlRequest ->
             case urlRequest of
@@ -153,260 +149,215 @@ update msg model =
                 newRoute =
                     case url.path of
                         "/admin" ->
-                            Admin
+                            AdminRoute
 
                         "/" ->
-                            Home
+                            HomeRoute
 
                         _ ->
-                            Home
+                            HomeRoute
             in
             ( { model | route = newRoute }
-            , if newRoute == Admin then
-                Effect.Lamdera.sendToBackend RequestBackendModel
+            , if newRoute == AdminRoute then
+                Effect.Lamdera.sendToBackend RequestBackendModelToBackend
 
               else
                 Command.none
             )
 
-        CellClicked boardIndex cellIndex ->
-            if model.currentMoveIndex < List.length model.moveHistory - 1 then
-                ( model, Command.none )
-
-            else
-                case model.route of
-                    Game (WithBot difficulty) ->
-                        if model.board.currentPlayer == O then
+        CellClicked move ->
+            model.frontendGame
+                |> Maybe.map
+                    (\frontendGame ->
+                        if frontendGame.currentMoveIndex < List.length frontendGame.moveHistory - 1 then
                             ( model, Command.none )
 
                         else
-                            let
-                                ( updatedModel, cmd ) =
-                                    handlePlayerMove model boardIndex cellIndex
-                            in
-                            if updatedModel.board.winner == Nothing then
-                                ( { updatedModel | botThinking = True }
-                                , Command.batch [ cmd, Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 500)) ]
-                                )
+                            case model.route of
+                                GameRoute (WithBot difficulty) ->
+                                    handlePlayerMove frontendGame model (WithBot difficulty) move
+                                        |> (\( updatedFrontendGame, cmd ) ->
+                                                ( { model | frontendGame = Just { updatedFrontendGame | botIsPlaying = True } }
+                                                , Command.batch
+                                                    [ cmd
+                                                    , Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 0))
+                                                    ]
+                                                )
+                                           )
 
-                            else
-                                ( updatedModel, cmd )
+                                GameRoute WithFriend ->
+                                    handlePlayerMove frontendGame model WithFriend move
+                                        |> (\( updatedFrontendGame, cmd ) ->
+                                                ( { model | frontendGame = Just updatedFrontendGame }
+                                                , cmd
+                                                )
+                                           )
 
-                    Game WithFriend ->
-                        handlePlayerMove model boardIndex cellIndex
+                                GameRoute OnlineGameMode ->
+                                    handlePlayerMove frontendGame model OnlineGameMode move
+                                        |> (\( updatedFrontendGame, cmd ) ->
+                                                ( { model | frontendGame = Just updatedFrontendGame }
+                                                , cmd
+                                                )
+                                           )
 
-                    Game OnlineGame ->
-                        model.onlinePlayer
-                            |> Maybe.map
-                                (\player ->
-                                    if player == model.board.currentPlayer then
-                                        handlePlayerMove model boardIndex cellIndex
-
-                                    else
-                                        ( model, Command.none )
-                                )
-                            |> Maybe.withDefault ( model, Command.none )
-
-                    Home ->
-                        ( model, Command.none )
-
-                    Admin ->
-                        ( model, Command.none )
+                                _ ->
+                                    ( model, Command.none )
+                    )
+                |> Maybe.withDefault ( model, Command.none )
 
         BotMove ->
-            case model.route of
-                Game (WithBot difficulty) ->
-                    if model.board.currentPlayer == O then
-                        let
-                            botMove =
-                                Bot.findBestMove model.board difficulty
+            case ( model.route |> Debug.log "route", model.frontendGame |> Debug.log "frontendGame" ) of
+                ( GameRoute (WithBot difficulty), Just game ) ->
+                    let
+                        botMove =
+                            Bot.findBestMove game difficulty |> Debug.log "botMove"
 
-                            ( newModel, cmd ) =
-                                case botMove of
-                                    Just ( boardIdx, cellIdx ) ->
-                                        let
-                                            ( modelAfterMove, moveCmd ) =
-                                                handlePlayerMove model boardIdx cellIdx
-                                        in
-                                        if modelAfterMove.board.winner == Nothing then
-                                            ( { modelAfterMove | botThinking = True }
-                                            , Command.batch [ moveCmd, Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 500)) ]
-                                            )
+                        ( newFrontendGame, cmd ) =
+                            case botMove of
+                                Just move ->
+                                    handlePlayerMove game model (WithBot difficulty) move
 
-                                        else
-                                            ( modelAfterMove, moveCmd )
+                                Nothing ->
+                                    ( game, Command.none )
+                    in
+                    ( { model | frontendGame = Just { newFrontendGame | botIsPlaying = False } }, cmd )
 
-                                    Nothing ->
-                                        ( model, Command.none )
-                        in
-                        ( newModel, cmd )
-
-                    else
-                        ( model, Command.none )
-
-                Game WithFriend ->
-                    ( model, Command.none )
-
-                Game OnlineGame ->
-                    ( model, Command.none )
-
-                Home ->
-                    ( model, Command.none )
-
-                Admin ->
+                _ ->
                     ( model, Command.none )
 
         RestartGame ->
             ( { model
-                | board = initialBoard X
-                , moveHistory = []
-                , currentMoveIndex = -1
+                | frontendGame = Nothing
               }
             , Command.none
             )
 
         StartGameWithFriend ->
             ( { model
-                | route = Game WithFriend
-                , board = initialBoard X
-                , moveHistory = []
-                , currentMoveIndex = -1
-                , gameResult = Ongoing
+                | route = GameRoute WithFriend
+                , frontendGame = Just <| initialFrontendGame Nothing FriendOpponent False
               }
-            , Audio.playButtonClick
+            , Audio.playSound ButtonClickSound
             )
 
         StartGameWithBot ->
             ( { model | botDifficultyMenuOpen = True }
-            , Audio.playButtonClick
+            , Audio.playSound ButtonClickSound
             )
 
         SelectBotDifficulty difficulty ->
             ( { model
                 | selectedDifficulty = Just difficulty
               }
-            , Audio.playButtonClick
+            , Audio.playSound ButtonClickSound
             )
 
-        StartWithPlayer humanStarts ->
+        StartBotGame difficulty firstPlayer ->
             let
-                startingPlayer =
-                    if humanStarts then
-                        X
+                ( botIsPlaying, newSeed ) =
+                    case firstPlayer of
+                        HumanBegins ->
+                            ( False, model.seed )
 
-                    else
+                        BotBegins ->
+                            ( True, model.seed )
+
+                        RandomBegins ->
+                            Random.step Random.Extra.bool (model.seed |> Maybe.withDefault (Random.initialSeed 42))
+                                |> Tuple.mapSecond Just
+
+                self =
+                    if botIsPlaying then
                         O
 
-                newBoard =
-                    initialBoard startingPlayer
-
-                cmd =
-                    if not humanStarts then
-                        Command.batch
-                            [ Audio.playButtonClick
-                            , Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 500))
-                            ]
-
                     else
-                        Audio.playButtonClick
+                        X
             in
-            case model.route of
-                Game (WithBot _) ->
-                    ( { model
-                        | board = newBoard
-                        , moveHistory = []
-                        , currentMoveIndex = -1
-                        , humanPlaysFirst = humanStarts
-                        , botThinking = not humanStarts
-                        , gameResult = Ongoing
-                      }
-                    , cmd
-                    )
+            ( { model
+                | route = GameRoute <| WithBot difficulty
+                , frontendGame = Just <| initialFrontendGame (Just self) (BotOpponent difficulty) botIsPlaying
+                , seed = newSeed
+              }
+            , Command.batch
+                [ Audio.playSound ButtonClickSound
+                , if botIsPlaying then
+                    Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 0))
 
-                _ ->
-                    case model.selectedDifficulty of
-                        Just difficulty ->
-                            ( { model
-                                | route = Game (WithBot difficulty)
-                                , botDifficultyMenuOpen = False
-                                , board = newBoard
-                                , moveHistory = []
-                                , currentMoveIndex = -1
-                                , selectedDifficulty = Nothing
-                                , humanPlaysFirst = humanStarts
-                                , botThinking = not humanStarts
-                                , gameResult = Ongoing
-                              }
-                            , cmd
-                            )
+                  else
+                    Command.none
+                ]
+            )
 
-                        Nothing ->
-                            ( model, Command.none )
+        GotTime time ->
+            ( { model | seed = Just <| Random.initialSeed (Effect.Time.posixToMillis time) }
+            , Command.none
+            )
 
         ReturnToMenu ->
             ( { model
-                | route = Home
-                , gameResult = Ongoing
+                | route = HomeRoute
+                , frontendGame = Nothing
+                , tutorialState = Nothing
               }
-            , Audio.playButtonClick
+            , Audio.playSound ButtonClickSound
             )
 
         CancelBotDifficulty ->
             ( { model | botDifficultyMenuOpen = False }
-            , Audio.playButtonClick
+            , Audio.playSound ButtonClickSound
             )
 
-        PlayForMe ->
-            case model.route of
-                Game (WithBot _) ->
-                    if model.board.currentPlayer == X && model.board.winner == Nothing then
-                        let
-                            botMove =
-                                Bot.findBestMove model.board Elite
+        PlayForMeAgainstTheBot ->
+            case ( model.route, model.frontendGame ) of
+                ( GameRoute (WithBot _), Just frontendGame ) ->
+                    let
+                        ( newModel, cmd ) =
+                            case Bot.findBestMove frontendGame Elite |> Debug.log "botMove" of
+                                Just move ->
+                                    let
+                                        ( newFrontendGame, moveCmd ) =
+                                            handlePlayerMove frontendGame model (WithBot Elite) move |> Debug.log "botMove2"
 
-                            ( newModel, cmd ) =
-                                case botMove of
-                                    Just ( boardIdx, cellIdx ) ->
-                                        let
-                                            ( modelAfterMove, moveCmd ) =
-                                                handlePlayerMove model boardIdx cellIdx
-                                        in
-                                        if modelAfterMove.board.winner == Nothing then
-                                            ( { modelAfterMove | botThinking = True }
-                                            , Command.batch [ moveCmd, Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 500)) ]
-                                            )
+                                        botIsPlaying =
+                                            (newFrontendGame.gameResult == Nothing) |> Debug.log "botIsPlaying"
+                                    in
+                                    ( { model | frontendGame = Just { newFrontendGame | botIsPlaying = botIsPlaying } }
+                                    , if botIsPlaying then
+                                        Command.batch
+                                            [ moveCmd
+                                            , Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 0))
+                                            ]
 
-                                        else
-                                            ( modelAfterMove, moveCmd )
+                                      else
+                                        moveCmd
+                                    )
 
-                                    Nothing ->
-                                        ( model, Command.none )
-                        in
-                        ( newModel, cmd )
-
-                    else
-                        ( model, Command.none )
+                                Nothing ->
+                                    ( model |> Debug.log "!!!!!!!!!", Command.none )
+                    in
+                    ( newModel, cmd )
 
                 _ ->
                     ( model, Command.none )
 
         ChangeLanguage lang ->
             let
-                newModel =
-                    { model
-                        | language = Just lang
-                        , frClickCount =
-                            if lang == FR then
-                                model.frClickCount + 1
-
-                            else
-                                model.frClickCount
-                    }
+                newLocalStorage =
+                    { localStorage | language = lang }
             in
-            ( newModel
+            ( { model
+                | localStorage = newLocalStorage
+                , frClickCount =
+                    if lang == FR then
+                        model.frClickCount + 1
+
+                    else
+                        model.frClickCount
+              }
             , Command.batch
-                [ LocalStorage.storeValue (LanguageUpdate lang)
-                , Audio.playButtonClick
+                [ LocalStorage.storeValue (LocalStorage.LanguageUpdate lang)
+                , Audio.playSound ButtonClickSound
                 ]
             )
 
@@ -414,47 +365,54 @@ update msg model =
             ( { model | debuggerVisible = False, frClickCount = 0 }, Command.none )
 
         UndoMove ->
-            if model.currentMoveIndex >= 0 then
-                let
-                    newIndex =
-                        model.currentMoveIndex - 1
+            model.frontendGame
+                |> Maybe.map
+                    (\frontendGame ->
+                        if frontendGame.currentMoveIndex >= 0 then
+                            let
+                                newIndex =
+                                    (frontendGame.currentMoveIndex - 1)
+                                        |> Debug.log "newIndex"
 
-                    newBoard =
-                        reconstructBoardFromMoves model.moveHistory newIndex model.board
-                in
-                ( { model
-                    | currentMoveIndex = newIndex
-                    , board = newBoard
-                  }
-                , Command.none
-                )
+                                newFrontendGame =
+                                    reconstructBoardFromMoves frontendGame.moveHistory newIndex frontendGame
+                            in
+                            ( { model
+                                | frontendGame = Just newFrontendGame
+                              }
+                            , Command.none
+                            )
 
-            else
-                ( model, Command.none )
+                        else
+                            ( model, Command.none )
+                    )
+                |> Maybe.withDefault ( model, Command.none )
 
         RedoMove ->
-            if model.currentMoveIndex < List.length model.moveHistory - 1 then
-                let
-                    newIndex =
-                        model.currentMoveIndex + 1
+            model.frontendGame
+                |> Maybe.map
+                    (\frontendGame ->
+                        if frontendGame.currentMoveIndex < List.length frontendGame.moveHistory - 1 then
+                            let
+                                newIndex =
+                                    frontendGame.currentMoveIndex + 1
 
-                    newBoard =
-                        reconstructBoardFromMoves model.moveHistory newIndex model.board
-                in
-                ( { model
-                    | currentMoveIndex = newIndex
-                    , board = newBoard
-                  }
-                , Command.none
-                )
+                                newFrontendGame =
+                                    reconstructBoardFromMoves frontendGame.moveHistory newIndex frontendGame
+                            in
+                            ( { model | frontendGame = Just newFrontendGame }
+                            , Command.none
+                            )
 
-            else
-                ( model, Command.none )
+                        else
+                            ( model, Command.none )
+                    )
+                |> Maybe.withDefault ( model, Command.none )
 
         ToggleDarkMode ->
             let
                 newPreference =
-                    case model.userPreference of
+                    case localStorage.userPreference of
                         DarkMode ->
                             LightMode
 
@@ -464,22 +422,27 @@ update msg model =
                         SystemMode ->
                             DarkMode
             in
-            ( { model | userPreference = newPreference }
+            ( { model | localStorage = { localStorage | userPreference = newPreference } }
             , Command.batch
-                [ LocalStorage.storeValue (ThemePreferenceUpdate newPreference)
-                , Audio.playButtonClick
+                [ LocalStorage.storeValue (LocalStorage.ThemePreferenceUpdate newPreference)
+                , Audio.playSound ButtonClickSound
                 ]
+            )
+
+        ToggleSound ->
+            let
+                newLocalStorage =
+                    { localStorage | soundEnabled = not localStorage.soundEnabled }
+            in
+            ( { model | localStorage = newLocalStorage }
+            , LocalStorage.storeValue (LocalStorage.SoundUpdate newLocalStorage.soundEnabled)
             )
 
         ToggleDebugMode ->
             ( model, Command.none )
 
-        ReceivedLocalStorage { language, userPreference, systemMode } ->
-            ( { model
-                | language = Just language
-                , userPreference = userPreference
-                , systemMode = systemMode
-              }
+        ReceivedLocalStorage localStorage_ ->
+            ( { model | localStorage = localStorage_ }
             , Command.none
             )
 
@@ -549,14 +512,14 @@ update msg model =
 
         ToggleRulesModal ->
             ( { model | rulesModalVisible = not model.rulesModalVisible }
-            , Audio.playButtonClick
+            , Audio.playSound ButtonClickSound
             )
 
         StartOnlineGame ->
             ( { model | inMatchmaking = True }
             , Command.batch
-                [ Effect.Lamdera.sendToBackend JoinMatchmaking
-                , Audio.playOnlineSound
+                [ Effect.Lamdera.sendToBackend JoinMatchmakingToBackend
+                , Audio.playSound PlayOnlineSound
                 ]
             )
 
@@ -564,67 +527,6 @@ update msg model =
             ( { model | inMatchmaking = False }
             , Effect.Lamdera.sendToBackend LeaveMatchmakingToBackend
             )
-
-        StartWithRandomPlayer ->
-            ( model, Effect.Task.perform GotTime Effect.Time.now )
-
-        GotTime time ->
-            let
-                randomValue =
-                    modBy 2 (Effect.Time.posixToMillis time)
-
-                humanStarts =
-                    randomValue == 0
-
-                startingPlayer =
-                    if humanStarts then
-                        X
-
-                    else
-                        O
-
-                newBoard =
-                    initialBoard startingPlayer
-
-                cmd =
-                    if not humanStarts then
-                        Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 500))
-
-                    else
-                        Command.none
-            in
-            case model.route of
-                Game (WithBot _) ->
-                    ( { model
-                        | board = newBoard
-                        , moveHistory = []
-                        , currentMoveIndex = -1
-                        , humanPlaysFirst = humanStarts
-                        , botThinking = not humanStarts
-                        , gameResult = Ongoing
-                      }
-                    , cmd
-                    )
-
-                _ ->
-                    case model.selectedDifficulty of
-                        Just difficulty ->
-                            ( { model
-                                | route = Game (WithBot difficulty)
-                                , botDifficultyMenuOpen = False
-                                , board = newBoard
-                                , moveHistory = []
-                                , currentMoveIndex = -1
-                                , selectedDifficulty = Nothing
-                                , humanPlaysFirst = humanStarts
-                                , botThinking = not humanStarts
-                                , gameResult = Ongoing
-                              }
-                            , cmd
-                            )
-
-                        Nothing ->
-                            ( model, Command.none )
 
         Tick newTime ->
             ( model, Command.none )
@@ -635,33 +537,25 @@ update msg model =
         HideAbandonConfirm ->
             ( { model | showAbandonConfirm = False }, Command.none )
 
-        ConfirmAbandon ->
+        ConfirmAbandon frontendGame ->
             ( { model
                 | showAbandonConfirm = False
-                , onlineOpponent = Nothing
-                , onlinePlayer = Nothing
-                , board = initialBoard X
-                , moveHistory = []
-                , currentMoveIndex = -1
-                , gameResult = Lost
+                , frontendGame = Just { frontendGame | gameResult = Just Lost }
               }
             , Command.batch
-                [ Effect.Lamdera.sendToBackend AbandonGame
-                , Audio.playLoseSound
+                [ Effect.Lamdera.sendToBackend AbandonGameToBackend
+                , Audio.playSound LoseSound
                 ]
             )
 
         StartTutorial ->
             ( { model
-                | tutorialState = Just TutorialBasicMove
-                , board = getTutorialBoard TutorialBasicMove
-                , route = Game WithFriend
-                , moveHistory = []
-                , currentMoveIndex = -1
-                , gameResult = Ongoing
+                | tutorialState = Just TutorialStep1
+                , frontendGame = Just (getTutorialBoard TutorialStep1)
+                , route = TutorialRoute
                 , rulesModalVisible = False
               }
-            , Audio.playButtonClick
+            , Audio.playSound ButtonClickSound
             )
 
         NextTutorialStep ->
@@ -670,32 +564,29 @@ update msg model =
                     let
                         nextStep =
                             case tutorialState of
-                                TutorialBasicMove ->
-                                    Just TutorialBoardSelection
+                                TutorialStep1 ->
+                                    Just TutorialStep2
 
-                                TutorialBoardSelection ->
-                                    Just TutorialWinningSmall
+                                TutorialStep2 ->
+                                    Just TutorialStep3
 
-                                TutorialWinningSmall ->
-                                    Just TutorialFreeChoice
+                                TutorialStep3 ->
+                                    Just TutorialStep4
 
-                                TutorialFreeChoice ->
-                                    Just TutorialWinningBig
+                                TutorialStep4 ->
+                                    Just TutorialStep5
 
-                                TutorialWinningBig ->
+                                TutorialStep5 ->
+                                    Just TutorialStep6
+
+                                TutorialStep6 ->
                                     Nothing
                     in
                     ( { model
                         | tutorialState = nextStep
-                        , board =
-                            case nextStep of
-                                Just step ->
-                                    getTutorialBoard step
-
-                                Nothing ->
-                                    initialBoard X
+                        , frontendGame = Maybe.map getTutorialBoard nextStep
                       }
-                    , Audio.playButtonClick
+                    , Audio.playSound ButtonClickSound
                     )
 
                 _ ->
@@ -704,10 +595,10 @@ update msg model =
         CompleteTutorial ->
             ( { model
                 | tutorialState = Nothing
-                , route = Home
-                , board = initialBoard X
+                , route = HomeRoute
+                , frontendGame = Nothing
               }
-            , Audio.playButtonClick
+            , Audio.playSound ButtonClickSound
             )
 
         LoadingComplete ->
@@ -720,354 +611,284 @@ update msg model =
             update RedoMove model
 
 
+initialFrontendGame : Maybe Player -> Opponent -> Bool -> FrontendGame
+initialFrontendGame self opponent botIsPlaying =
+    { self = self
+    , boards = List.repeat 9 emptySmallBoard
+    , currentPlayer = X
+    , activeBoard = Nothing
+    , winner = Nothing
+    , lastMove = Nothing
+    , moveHistory = []
+    , currentMoveIndex = -1
+    , gameResult = Nothing
+    , botIsPlaying = botIsPlaying
+    , opponent = opponent
+    }
+
+
 updateFromBackend : ToFrontend -> FrontendModel -> ( FrontendModel, Command FrontendOnly ToBackend FrontendMsg )
 updateFromBackend msg model =
     case msg of
         NoOpToFrontend ->
             ( model, Command.none )
 
-        GameFound { opponentId, playerRole } ->
+        GameFoundToFrontend { opponentId, playerRole } ->
             ( { model
-                | route = Game OnlineGame
-                , board = initialBoard X
-                , moveHistory = []
-                , currentMoveIndex = -1
-                , onlinePlayer = Just playerRole
-                , onlineOpponent = Just opponentId
+                | route = GameRoute OnlineGameMode
+                , frontendGame = Just (initialFrontendGame (Just playerRole) (OnlineOpponent opponentId) False)
                 , inMatchmaking = False
-                , gameResult = Ongoing
               }
-            , Audio.playButtonClick
+            , Audio.playSound ButtonClickSound
             )
 
-        OpponentMove move ->
-            let
-                newBoard =
-                    makeMove model.board move.boardIndex move.cellIndex move.player
+        OpponentMoveToFrontend move ->
+            model.frontendGame
+                |> Maybe.map
+                    (\frontendGame ->
+                        let
+                            newFrontendGame =
+                                makeMove
+                                    (reconstructBoardFromMoves frontendGame.moveHistory (List.length frontendGame.moveHistory) frontendGame)
+                                    move
+                                    frontendGame.currentPlayer
 
-                newMoveHistory =
-                    List.take (model.currentMoveIndex + 1) model.moveHistory ++ [ move ]
-            in
+                            soundCommand =
+                                let
+                                    oldSmallBoard =
+                                        List.getAt move.boardIndex newFrontendGame.boards
+                                            |> Maybe.withDefault GameLogic.emptySmallBoard
+
+                                    newSmallBoard =
+                                        List.getAt move.boardIndex newFrontendGame.boards
+                                            |> Maybe.withDefault GameLogic.emptySmallBoard
+                                in
+                                if newSmallBoard.winner /= Nothing && oldSmallBoard.winner == Nothing then
+                                    Audio.playSound SmallWinSound
+
+                                else
+                                    Audio.playSound (MoveSound frontendGame.currentPlayer)
+                        in
+                        ( { model
+                            | frontendGame =
+                                Just
+                                    { newFrontendGame
+                                        | gameResult =
+                                            case newFrontendGame.winner of
+                                                Just winner ->
+                                                    if frontendGame.self == Just winner then
+                                                        Just Won
+
+                                                    else
+                                                        Just Lost
+
+                                                Nothing ->
+                                                    if isBigBoardComplete newFrontendGame.boards then
+                                                        Just Draw
+
+                                                    else
+                                                        Nothing
+                                        , currentMoveIndex = List.length newFrontendGame.moveHistory
+                                        , moveHistory = newFrontendGame.moveHistory ++ [ move ]
+                                    }
+                          }
+                        , soundCommand
+                        )
+                    )
+                |> Maybe.withDefault ( model, Command.none )
+
+        OpponentLeftToFrontend frontendGame ->
             ( { model
-                | board = newBoard
-                , moveHistory = newMoveHistory
-                , currentMoveIndex = model.currentMoveIndex + 1
-                , gameResult =
-                    if newBoard.winner == Just O then
-                        Lost
+                | frontendGame = Just { frontendGame | gameResult = Just Won }
 
-                    else if newBoard.winner == Just X then
-                        Won
-
-                    else if isBigBoardComplete newBoard then
-                        Drew
-
-                    else
-                        Ongoing
+                -- TODO: handle this to display a message to the user --FIXME
               }
-            , Audio.playMoveSound move.player
+            , Audio.playSound WinSound
             )
 
-        OpponentLeft ->
-            ( { model | onlineOpponent = Nothing }, Command.none )
-
-        BackendModelReceived backendModel ->
+        BackendModelReceivedToFrontend backendModel ->
             ( { model | backendModel = Just backendModel }, Command.none )
 
+        SendGameToFrontend frontendGame ->
+            ( { model | frontendGame = Just frontendGame, route = GameRoute OnlineGameMode, inMatchmaking = False }, Command.none )
 
-handlePlayerMove : FrontendModel -> Int -> Int -> ( FrontendModel, Command FrontendOnly ToBackend FrontendMsg )
-handlePlayerMove model boardIndex cellIndex =
-    let
-        canPlayInBoard =
-            case model.board.activeBoard of
-                Nothing ->
-                    True
 
-                Just activeBoardIndex ->
-                    boardIndex == activeBoardIndex
 
-        board =
-            model.board
+--  canPlayInMiniBoard =
+--             case frontendGame.activeBoard of
+--                 Nothing ->
+--                     True
+--                 Just activeBoardIndex ->
+--                     boardIndex == activeBoardIndex
+--         smallBoard =
+--             List.getAt boardIndex frontendGame.boards
+--         isCellEmpty =
+--             case smallBoard of
+--                 Just sb ->
+--                     case List.getAt cellIndex sb.cells of
+--                         Just cell ->
+--                             cell == Empty
+--                         Nothing ->
+--                             False
+--                 Nothing ->
+--                     False
+--         isSmallBoardAvailable =
+--             case smallBoard of
+--                 Just sb ->
+--                     sb.winner == Nothing && not (List.all (\cell -> cell /= Empty) sb.cells)
+--                 Nothing ->
+--                     False
 
-        smallBoard =
-            List.getAt boardIndex board.boards
 
-        isCellEmpty =
-            case smallBoard of
-                Just sb ->
-                    case List.getAt cellIndex sb.cells of
+isValidMove : FrontendGame -> Move -> Bool
+isValidMove frontendGame move =
+    case List.getAt move.boardIndex frontendGame.boards of
+        Just sb ->
+            let
+                canPlayInMiniBoard =
+                    case frontendGame.activeBoard of
+                        Nothing ->
+                            True
+
+                        Just activeBoardIndex ->
+                            move.boardIndex == activeBoardIndex
+
+                isCellEmpty =
+                    case List.getAt move.cellIndex sb.cells of
                         Just cell ->
                             cell == Empty
 
                         Nothing ->
                             False
 
-                Nothing ->
-                    False
-
-        isSmallBoardAvailable =
-            case smallBoard of
-                Just sb ->
+                isSmallBoardAvailable =
                     sb.winner == Nothing && not (List.all (\cell -> cell /= Empty) sb.cells)
+            in
+            canPlayInMiniBoard && isCellEmpty && isSmallBoardAvailable
 
-                Nothing ->
-                    False
+        Nothing ->
+            False
 
-        move =
-            { boardIndex = boardIndex
-            , cellIndex = cellIndex
-            , player = board.currentPlayer
-            }
 
-        newBoard =
-            makeMove board boardIndex cellIndex board.currentPlayer
-
-        newHistory =
-            List.take (model.currentMoveIndex + 1) model.moveHistory ++ [ move ]
-
-        newIndex =
-            List.length newHistory - 1
-
-        shouldProgressTutorial =
-            case model.tutorialState of
-                Just step ->
-                    case step of
-                        TutorialWinningSmall ->
-                            canPlayInBoard
-                                && isCellEmpty
-                                && isSmallBoardAvailable
-                                && boardIndex
-                                == 4
-                                && cellIndex
-                                == 4
-                                && (let
-                                        boardAfterMove =
-                                            makeMove board boardIndex cellIndex board.currentPlayer
-
-                                        centerBoard =
-                                            List.getAt 4 boardAfterMove.boards
-                                    in
-                                    case centerBoard of
-                                        Just sb ->
-                                            sb.winner == Just X
-
-                                        Nothing ->
-                                            False
-                                   )
-
-                        TutorialWinningBig ->
-                            canPlayInBoard
-                                && isCellEmpty
-                                && isSmallBoardAvailable
-                                && boardIndex
-                                == 8
-                                && cellIndex
-                                == 6
-                                && (let
-                                        boardAfterMove =
-                                            makeMove board boardIndex cellIndex board.currentPlayer
-                                    in
-                                    boardAfterMove.winner == Just X
-                                   )
-
-                        _ ->
-                            canPlayInBoard && isCellEmpty && isSmallBoardAvailable && isTutorialMoveValid step boardIndex cellIndex newBoard
-
-                _ ->
-                    False
-
-        nextTutorialStep =
-            if shouldProgressTutorial then
-                case model.tutorialState of
-                    Just TutorialBasicMove ->
-                        Just TutorialBoardSelection
-
-                    Just TutorialBoardSelection ->
-                        Just TutorialWinningSmall
-
-                    Just TutorialWinningSmall ->
-                        Just TutorialFreeChoice
-
-                    Just TutorialFreeChoice ->
-                        Just TutorialWinningBig
-
-                    Just TutorialWinningBig ->
-                        Nothing
-
-                    _ ->
-                        Nothing
-
-            else
-                Nothing
+handlePlayerMove : FrontendGame -> FrontendModel -> GameMode -> Move -> ( FrontendGame, Command FrontendOnly ToBackend FrontendMsg )
+handlePlayerMove frontendGame model gameMode move =
+    let
+        newFrontendGame =
+            makeMove frontendGame move frontendGame.currentPlayer
 
         newGameResult =
             case model.route of
-                Game (WithBot _) ->
-                    case newBoard.winner of
+                GameRoute (WithBot _) ->
+                    case newFrontendGame.winner of
                         Just winner ->
-                            if winner == X then
-                                Won
+                            if frontendGame.self == Just winner then
+                                Just Won
 
                             else
-                                Lost
+                                Just Lost
 
                         Nothing ->
-                            if isBigBoardComplete newBoard then
-                                Drew
+                            if isBigBoardComplete newFrontendGame.boards then
+                                Just Draw
 
                             else
-                                Ongoing
-
-                Game OnlineGame ->
-                    case newBoard.winner of
-                        Just winner ->
-                            case model.onlinePlayer of
-                                Just myRole ->
-                                    if myRole == winner then
-                                        Won
-
-                                    else
-                                        Lost
-
-                                Nothing ->
-                                    Ongoing
-
-                        Nothing ->
-                            if isBigBoardComplete newBoard then
-                                Drew
-
-                            else
-                                Ongoing
-
-                _ ->
-                    case model.tutorialState of
-                        Just TutorialWinningBig ->
-                            if shouldProgressTutorial then
-                                Won
-
-                            else
-                                model.gameResult
-
-                        _ ->
-                            model.gameResult
-
-        updatedModel =
-            { model
-                | board = newBoard
-                , moveHistory = newHistory
-                , currentMoveIndex = newIndex
-                , tutorialState =
-                    case ( model.tutorialState, nextTutorialStep ) of
-                        ( Just TutorialWinningBig, Nothing ) ->
-                            if shouldProgressTutorial then
                                 Nothing
 
+                GameRoute OnlineGameMode ->
+                    case newFrontendGame.winner of
+                        Just winner ->
+                            if frontendGame.self == Just winner then
+                                Just Won
+
                             else
-                                model.tutorialState
+                                Just Lost
 
-                        ( _, Just step ) ->
-                            Just step
+                        Nothing ->
+                            if isBigBoardComplete newFrontendGame.boards then
+                                Just Draw
 
-                        _ ->
-                            model.tutorialState
-                , gameResult = newGameResult
+                            else
+                                Nothing
+
+                _ ->
+                    Nothing
+
+        updatedFrontendGame =
+            { newFrontendGame
+                | gameResult = newGameResult
+                , currentMoveIndex = List.length newFrontendGame.moveHistory
+                , moveHistory = newFrontendGame.moveHistory ++ [ move ]
             }
 
         soundCommand =
-            if canPlayInBoard && isCellEmpty && isSmallBoardAvailable then
-                case newGameResult of
-                    Won ->
-                        Audio.playWinSound
+            case newGameResult of
+                Just Won ->
+                    Audio.playSound WinSound
 
-                    Lost ->
-                        Audio.playLoseSound
+                Just Lost ->
+                    Audio.playSound LoseSound
 
-                    Drew ->
-                        Audio.playDrawSound
+                Just Draw ->
+                    Audio.playSound DrawSound
 
-                    Ongoing ->
-                        let
-                            newSmallBoard =
-                                List.getAt boardIndex newBoard.boards
-                                    |> Maybe.withDefault GameLogic.emptySmallBoard
+                Nothing ->
+                    case
+                        List.getAt move.boardIndex newFrontendGame.boards
+                            |> Maybe.andThen .winner
+                    of
+                        Just _ ->
+                            Audio.playSound SmallWinSound
 
-                            oldSmallBoard =
-                                List.getAt boardIndex board.boards
-                                    |> Maybe.withDefault GameLogic.emptySmallBoard
-                        in
-                        if newSmallBoard.winner /= Nothing && oldSmallBoard.winner == Nothing then
-                            Audio.playSmallWinSound
-
-                        else
-                            Audio.playMoveSound board.currentPlayer
-
-            else
-                Audio.playErrorSound
+                        Nothing ->
+                            Audio.playSound (MoveSound frontendGame.currentPlayer)
     in
-    if canPlayInBoard && isCellEmpty && isSmallBoardAvailable then
-        case model.route of
-            Game (WithBot difficulty) ->
-                if model.board.currentPlayer == X then
-                    ( updatedModel
-                    , Command.batch
-                        [ soundCommand
-                        , Effect.Process.sleep (Duration.milliseconds 500)
-                            |> Effect.Task.perform (\_ -> BotMove)
-                        ]
-                    )
+    if isValidMove frontendGame move then
+        case gameMode of
+            WithBot _ ->
+                ( updatedFrontendGame
+                , soundCommand
+                )
 
-                else
-                    ( updatedModel, soundCommand )
-
-            Game OnlineGame ->
-                case model.onlinePlayer of
-                    Just player ->
-                        if player == model.board.currentPlayer then
-                            ( updatedModel
-                            , Command.batch
-                                [ soundCommand
-                                , Effect.Lamdera.sendToBackend (MakeMove boardIndex cellIndex player)
-                                ]
-                            )
-
-                        else
-                            ( model, Command.none )
+            OnlineGameMode ->
+                case frontendGame.self of
+                    Just _ ->
+                        ( updatedFrontendGame
+                        , Command.batch
+                            [ soundCommand
+                            , Effect.Lamdera.sendToBackend <| MakeMoveToBackend move
+                            ]
+                        )
 
                     Nothing ->
-                        ( model, Command.none )
+                        ( updatedFrontendGame, soundCommand )
 
-            _ ->
-                ( updatedModel, soundCommand )
+            WithFriend ->
+                ( updatedFrontendGame, soundCommand )
 
     else
-        ( model, Audio.playErrorSound )
+        ( frontendGame, Audio.playSound ErrorSound )
 
 
 view : FrontendModel -> Browser.Document FrontendMsg
 view model =
-    case model.language of
-        Nothing ->
-            { title = "Tic-Tac-Toe", body = [ viewLoadingScreen { t = translations EN, c = themes model.userPreference model.systemMode } model ] }
-
-        Just language ->
-            let
-                ({ c, t } as userConfig) =
-                    { t = translations language
-                    , c = themes model.userPreference model.systemMode
-                    }
-            in
-            { title = t.welcome
-            , body =
-                [ Html.node "link"
-                    [ attribute "rel" "stylesheet"
-                    , attribute "href" "https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
-                    ]
-                    []
-                , Html.node "style"
-                    []
-                    [ text """
-                        *:not(.game-symbol) {
-                            font-family: 'Press Start 2P', cursive !important;
+    let
+        ({ c, t } as userConfig) =
+            { t = translations model.localStorage.language
+            , c = themes model.localStorage.userPreference model.localStorage.systemMode
+            }
+    in
+    { title = t.welcome
+    , body =
+        [ Html.node "link"
+            [ attribute "rel" "stylesheet"
+            , attribute "href" "https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+            ]
+            []
+        , Html.node "style"
+            []
+            [ text """
+                        body {
+                            font-family: 'Press Start 2P', cursive;
                         }
                         .game-symbol {
                             font-family: Arial, sans-serif;
@@ -1095,82 +916,83 @@ view model =
                             50% { transform: scale(1.05); }
                             100% { transform: scale(1); }
                         }
-                        """ ]
-                , div
-                    [ style "position" "relative"
-                    , style "min-height" "100vh"
-                    , style "width" "100%"
-                    , style "background" c.gradientBackground
-                    ]
-                    [ div
-                        [ style "min-height" "100vh"
-                        , style "background" c.gradientBackground
-                        , style "min-height" "100dvh"
-                        , style "width" "100%"
-                        , style "display" "flex"
-                        , style "align-items" "center"
-                        , style "justify-content" "center"
-                        , style "padding" "env(safe-area-inset-top, 10px) env(safe-area-inset-right, 10px) env(safe-area-inset-bottom, 10px) env(safe-area-inset-left, 10px)"
-                        , style "box-sizing" "border-box"
-                        , style "position" "absolute"
-                        , style "top" "0"
-                        , style "left" "0"
-                        , style "letter-spacing" "1px"
-                        , style "line-height" "1.5"
-                        , style "opacity"
-                            (if model.isLoading then
-                                "0"
-                             else
-                                "1"
-                            )
-                        , style "transition" "opacity 0.3s ease-in"
-                        ]
-                        ([ viewLanguageSelector userConfig model
-                         , case model.route of
-                            Home ->
-                                viewHome userConfig model
+                    """
+            ]
+        , div
+            [ style "position" "relative"
+            , style "min-height" "100vh"
+            , style "width" "100%"
+            , style "background" c.gradientBackground
+            ]
+            [ div
+                [ style "min-height" "100vh"
+                , style "background" c.gradientBackground
+                , style "min-height" "100dvh"
+                , style "width" "100%"
+                , style "display" "flex"
+                , style "align-items" "center"
+                , style "justify-content" "center"
+                , style "padding" "env(safe-area-inset-top, 10px) env(safe-area-inset-right, 10px) env(safe-area-inset-bottom, 10px) env(safe-area-inset-left, 10px)"
+                , style "box-sizing" "border-box"
+                , style "position" "absolute"
+                , style "top" "0"
+                , style "left" "0"
+                , style "letter-spacing" "1px"
+                , style "line-height" "1.5"
+                , style "opacity"
+                    (if model.isLoading then
+                        "0"
 
-                            Game mode ->
-                                viewGame userConfig model mode
-                                
-                            Admin ->
-                                case model.backendModel of
-                                    Just backendModel ->
-                                        Admin.view userConfig backendModel
-                                    Nothing ->
-                                        div [ style "padding" "20px", style "text-align" "center" ]
-                                            [ text "Loading admin data..." ]
-                         ]
-                            ++ (if model.route /= Admin then
-                                    Debugger.view userConfig model
-                                else
-                                    []
-                               )
-                            ++ (if model.route /= Admin then
-                                    [ if model.gameResult /= Ongoing then
-                                        viewGameResultModal userConfig model
-                                     else
-                                        text ""
-                                   , if model.rulesModalVisible then
-                                        viewRulesModal userConfig model
-                                     else
-                                        text ""
-                                   , if model.tutorialState /= Nothing then
-                                        viewTutorialOverlay userConfig model
-                                     else
-                                        text ""
-                                   ]
-                                else
-                                    [ text "" ]
-                               )
-                        )
-                    , if model.isLoading then
-                        viewLoadingScreen userConfig model
-                      else
-                        text ""
-                    ]
+                     else
+                        "1"
+                    )
+                , style "transition" "opacity 0.3s ease-in"
                 ]
-            }
+                ([ viewLanguageSelector userConfig model
+                 , case ( model.route, model.frontendGame, model.tutorialState ) of
+                    ( HomeRoute, _, _ ) ->
+                        viewHome userConfig model
+
+                    ( TutorialRoute, Just frontendGame, Just tutorialState ) ->
+                        Tutorial.View.viewGame userConfig frontendGame model tutorialState
+
+                    ( GameRoute mode, Just frontendGame, _ ) ->
+                        viewGame userConfig model frontendGame mode
+
+                    ( AdminRoute, _, _ ) ->
+                        Admin.view userConfig model.backendModel
+
+                    _ ->
+                        text "SHOULD NOT HAPPEN"
+                 ]
+                    ++ Debugger.view userConfig model
+                    ++ [ case model.frontendGame |> Maybe.andThen .gameResult of
+                            Just gameResult ->
+                                viewGameResultModal userConfig gameResult
+
+                            Nothing ->
+                                text ""
+                       , if model.rulesModalVisible then
+                            viewRulesModal userConfig model
+
+                         else
+                            text ""
+                       , case ( model.frontendGame, model.tutorialState ) of
+                            ( Just frontendGame, Just tutorialState ) ->
+                                Tutorial.View.viewTutorialOverlay userConfig frontendGame tutorialState
+
+                            _ ->
+                                text ""
+                       ]
+                )
+            , if model.isLoading then
+                viewLoadingScreen userConfig model
+
+              else
+                text ""
+            ]
+        ]
+    }
 
 
 viewGameButton : UserConfig -> HtmlId -> String -> FrontendMsg -> Html FrontendMsg
@@ -1185,6 +1007,52 @@ viewGameButton userConfig htmlId label msg =
                ]
         )
         [ text label ]
+
+
+playOnlineButton : UserConfig -> FrontendModel -> Html FrontendMsg
+playOnlineButton ({ t } as userConfig) model =
+    div
+        Layout.flexColumnCenter
+        [ button
+            (Button.primary userConfig
+                ++ Button.withShadow
+                ++ (if model.inMatchmaking then
+                        Button.disabled
+
+                    else
+                        []
+                   )
+                ++ Utils.margin10
+                ++ Utils.fullWidth
+                ++ Utils.maxWidth 300
+                ++ [ onClick
+                        (if model.inMatchmaking then
+                            LeaveMatchmaking
+
+                         else
+                            StartOnlineGame
+                        )
+                   , Dom.idToAttribute <|
+                        Dom.id
+                            (if model.inMatchmaking then
+                                "leave-matchmaking-button"
+
+                             else
+                                "start-online-game-button"
+                            )
+                   ]
+            )
+            [ if model.inMatchmaking then
+                div
+                    Layout.flexCenterWithGap
+                    [ text t.searching
+                    , viewThinkingIndicator
+                    ]
+
+              else
+                text t.playOnline
+            ]
+        ]
 
 
 viewHome : UserConfig -> FrontendModel -> Html FrontendMsg
@@ -1204,51 +1072,10 @@ viewHome ({ t, c } as userConfig) model =
             div []
                 [ T.h1 c t.welcome
                 , T.text c t.description
-                , div
-                    Layout.flexColumnCenter
-                    [ viewGameButton userConfig (Dom.id "gameWithFriend") t.playWithFriend StartGameWithFriend
-                    , viewGameButton userConfig (Dom.id "gameWithBot") t.playWithBot StartGameWithBot
-                    , viewGameButton userConfig (Dom.id "toggleRules") t.rulesTitle ToggleRulesModal
-                    , button
-                        (Button.secondary userConfig
-                            ++ Button.withShadow
-                            ++ (if model.inMatchmaking then
-                                    Button.disabled
-
-                                else
-                                    []
-                               )
-                            ++ Utils.margin10
-                            ++ Utils.fullWidth
-                            ++ Utils.maxWidth 300
-                            ++ [ onClick
-                                    (if model.inMatchmaking then
-                                        LeaveMatchmaking
-
-                                     else
-                                        StartOnlineGame
-                                    )
-                               , Dom.idToAttribute <|
-                                    Dom.id
-                                        (if model.inMatchmaking then
-                                            "leave-matchmaking-button"
-
-                                         else
-                                            "start-online-game-button"
-                                        )
-                               ]
-                        )
-                        [ if model.inMatchmaking then
-                            div
-                                Layout.flexCenterWithGap
-                                [ text t.searching
-                                , viewThinkingIndicator
-                                ]
-
-                          else
-                            text t.playOnline
-                        ]
-                    ]
+                , playOnlineButton userConfig model
+                , viewGameButton userConfig (Dom.id "gameWithBot") t.playWithBot StartGameWithBot
+                , viewGameButton userConfig (Dom.id "toggleRules") t.rulesTitle ToggleRulesModal
+                , viewGameButton userConfig (Dom.id "gameWithFriend") t.playWithFriend StartGameWithFriend
                 ]
         , if model.rulesModalVisible then
             viewRulesModal userConfig model
@@ -1258,37 +1085,32 @@ viewHome ({ t, c } as userConfig) model =
         ]
 
 
-viewGame : UserConfig -> FrontendModel -> GameMode -> Html FrontendMsg
-viewGame ({ t, c } as userConfig) model mode =
+viewGame : UserConfig -> FrontendModel -> FrontendGame -> GameMode -> Html FrontendMsg
+viewGame ({ t, c } as userConfig) model frontendGame mode =
     let
         gameTitle =
-            case model.tutorialState of
-                Just _ ->
-                    t.tutorialTitle
+            case mode of
+                WithFriend ->
+                    t.playingWithFriend
 
-                Nothing ->
-                    case mode of
-                        WithFriend ->
-                            t.playingWithFriend
+                WithBot difficulty ->
+                    t.playingWithBot
+                        (case difficulty of
+                            Easy ->
+                                t.easy
 
-                        WithBot difficulty ->
-                            t.playingWithBot
-                                (case difficulty of
-                                    Easy ->
-                                        t.easy
+                            Medium ->
+                                t.medium
 
-                                    Medium ->
-                                        t.medium
+                            Hard ->
+                                t.hard
 
-                                    Hard ->
-                                        t.hard
+                            Elite ->
+                                t.elite
+                        )
 
-                                    Elite ->
-                                        t.elite
-                                )
-
-                        OnlineGame ->
-                            t.playingOnline
+                OnlineGameMode ->
+                    t.playingOnline
     in
     div
         [ style "display" "flex"
@@ -1312,7 +1134,7 @@ viewGame ({ t, c } as userConfig) model mode =
             , style "flex-shrink" "0"
             ]
             [ text gameTitle
-            , viewStatus userConfig model
+            , viewStatus userConfig frontendGame mode
             ]
         , div
             [ style "flex" "1"
@@ -1327,7 +1149,13 @@ viewGame ({ t, c } as userConfig) model mode =
                 [ style "width" "min(100%, calc(100vh - 300px))"
                 , style "aspect-ratio" "1/1"
                 ]
-                [ viewBigBoard userConfig model ]
+                [ case model.tutorialState of
+                    Just tutorialState ->
+                        Tutorial.View.viewBigBoardTutorial userConfig frontendGame tutorialState
+
+                    Nothing ->
+                        viewBigBoard userConfig frontendGame
+                ]
             ]
         , div
             [ style "padding" "10px"
@@ -1341,7 +1169,7 @@ viewGame ({ t, c } as userConfig) model mode =
                             , style "font-size" "0.8em"
                             , style "font-family" "inherit"
                             , style "background-color"
-                                (if model.board.currentPlayer == X && model.board.winner == Nothing && not model.botThinking then
+                                (if frontendGame.self == Just frontendGame.currentPlayer && frontendGame.winner == Nothing && not frontendGame.botIsPlaying then
                                     Color.primary
 
                                  else
@@ -1351,7 +1179,7 @@ viewGame ({ t, c } as userConfig) model mode =
                             , style "border" "none"
                             , style "border-radius" "10px"
                             , style "cursor"
-                                (if model.board.currentPlayer == X && model.board.winner == Nothing && not model.botThinking then
+                                (if frontendGame.self == Just frontendGame.currentPlayer && frontendGame.winner == Nothing && not frontendGame.botIsPlaying then
                                     "pointer"
 
                                  else
@@ -1360,7 +1188,7 @@ viewGame ({ t, c } as userConfig) model mode =
                             , style "transition" "all 0.2s ease"
                             , style "margin-bottom" "10px"
                             , style "width" "100%"
-                            , onClick PlayForMe
+                            , onClick PlayForMeAgainstTheBot
                             ]
                             [ text t.playForMe ]
                         , if model.showAbandonConfirm then
@@ -1380,7 +1208,7 @@ viewGame ({ t, c } as userConfig) model mode =
                                     , style "border-radius" "10px"
                                     , style "cursor" "pointer"
                                     , style "transition" "all 0.2s ease"
-                                    , onClick ConfirmAbandon
+                                    , onClick (ConfirmAbandon frontendGame)
                                     ]
                                     [ text t.confirmAbandon ]
                                 , button
@@ -1417,17 +1245,48 @@ viewGame ({ t, c } as userConfig) model mode =
                                 [ text t.abandon ]
                         ]
 
-                OnlineGame ->
-                    if model.onlineOpponent /= Nothing then
-                        if model.showAbandonConfirm then
-                            div
-                                [ style "display" "flex"
-                                , style "gap" "10px"
-                                , style "margin-bottom" "10px"
-                                ]
-                                [ button
-                                    [ style "flex" "1"
-                                    , style "padding" "12px"
+                OnlineGameMode ->
+                    case frontendGame.opponent of
+                        OnlineOpponent _ ->
+                            if model.showAbandonConfirm then
+                                div
+                                    [ style "display" "flex"
+                                    , style "gap" "10px"
+                                    , style "margin-bottom" "10px"
+                                    ]
+                                    [ button
+                                        [ style "flex" "1"
+                                        , style "padding" "12px"
+                                        , style "font-size" "0.8em"
+                                        , style "font-family" "inherit"
+                                        , style "background-color" Color.danger
+                                        , style "color" "white"
+                                        , style "border" "none"
+                                        , style "border-radius" "10px"
+                                        , style "cursor" "pointer"
+                                        , style "transition" "all 0.2s ease"
+                                        , onClick (ConfirmAbandon frontendGame)
+                                        ]
+                                        [ text t.confirmAbandon ]
+                                    , button
+                                        [ style "flex" "1"
+                                        , style "padding" "12px"
+                                        , style "font-size" "0.8em"
+                                        , style "font-family" "inherit"
+                                        , style "background-color" Color.primary
+                                        , style "color" "white"
+                                        , style "border" "none"
+                                        , style "border-radius" "10px"
+                                        , style "cursor" "pointer"
+                                        , style "transition" "all 0.2s ease"
+                                        , onClick HideAbandonConfirm
+                                        ]
+                                        [ text t.cancelAbandon ]
+                                    ]
+
+                            else
+                                button
+                                    [ style "padding" "12px"
                                     , style "font-size" "0.8em"
                                     , style "font-family" "inherit"
                                     , style "background-color" Color.danger
@@ -1436,44 +1295,14 @@ viewGame ({ t, c } as userConfig) model mode =
                                     , style "border-radius" "10px"
                                     , style "cursor" "pointer"
                                     , style "transition" "all 0.2s ease"
-                                    , onClick ConfirmAbandon
+                                    , style "margin-bottom" "10px"
+                                    , style "width" "100%"
+                                    , onClick ShowAbandonConfirm
                                     ]
-                                    [ text t.confirmAbandon ]
-                                , button
-                                    [ style "flex" "1"
-                                    , style "padding" "12px"
-                                    , style "font-size" "0.8em"
-                                    , style "font-family" "inherit"
-                                    , style "background-color" Color.primary
-                                    , style "color" "white"
-                                    , style "border" "none"
-                                    , style "border-radius" "10px"
-                                    , style "cursor" "pointer"
-                                    , style "transition" "all 0.2s ease"
-                                    , onClick HideAbandonConfirm
-                                    ]
-                                    [ text t.cancelAbandon ]
-                                ]
+                                    [ text t.abandon ]
 
-                        else
-                            button
-                                [ style "padding" "12px"
-                                , style "font-size" "0.8em"
-                                , style "font-family" "inherit"
-                                , style "background-color" Color.danger
-                                , style "color" "white"
-                                , style "border" "none"
-                                , style "border-radius" "10px"
-                                , style "cursor" "pointer"
-                                , style "transition" "all 0.2s ease"
-                                , style "margin-bottom" "10px"
-                                , style "width" "100%"
-                                , onClick ShowAbandonConfirm
-                                ]
-                                [ text t.abandon ]
-
-                    else
-                        text ""
+                        _ ->
+                            text ""
 
                 WithFriend ->
                     if model.tutorialState == Nothing then
@@ -1496,69 +1325,65 @@ viewGame ({ t, c } as userConfig) model mode =
 
                     else
                         text ""
-            , if model.tutorialState == Nothing then
-                div
-                    [ style "display" "flex"
-                    , style "gap" "10px"
+            , div
+                [ style "display" "flex"
+                , style "gap" "10px"
+                ]
+                [ button
+                    [ style "flex" "1"
+                    , style "padding" "8px"
+                    , style "font-size" "1.2em"
+                    , style "background-color"
+                        (if frontendGame.currentMoveIndex >= 0 then
+                            Color.primary
+
+                         else
+                            Color.disabled
+                        )
+                    , style "color" "white"
+                    , style "border" "none"
+                    , style "border-radius" "6px"
+                    , style "cursor"
+                        (if frontendGame.currentMoveIndex >= 0 then
+                            "pointer"
+
+                         else
+                            "not-allowed"
+                        )
+                    , style "display" "flex"
+                    , style "align-items" "center"
+                    , style "justify-content" "center"
+                    , onClick UndoMove
                     ]
-                    [ button
-                        [ style "flex" "1"
-                        , style "padding" "8px"
-                        , style "font-size" "1.2em"
-                        , style "background-color"
-                            (if model.currentMoveIndex >= 0 then
-                                Color.primary
+                    [ text "↩" ]
+                , button
+                    [ style "flex" "1"
+                    , style "padding" "8px"
+                    , style "font-size" "1.2em"
+                    , style "background-color"
+                        (if frontendGame.currentMoveIndex < List.length frontendGame.moveHistory - 1 then
+                            Color.primary
 
-                             else
-                                Color.disabled
-                            )
-                        , style "color" "white"
-                        , style "border" "none"
-                        , style "border-radius" "6px"
-                        , style "cursor"
-                            (if model.currentMoveIndex >= 0 then
-                                "pointer"
+                         else
+                            Color.disabled
+                        )
+                    , style "color" "white"
+                    , style "border" "none"
+                    , style "border-radius" "6px"
+                    , style "cursor"
+                        (if frontendGame.currentMoveIndex < List.length frontendGame.moveHistory - 1 then
+                            "pointer"
 
-                             else
-                                "not-allowed"
-                            )
-                        , style "display" "flex"
-                        , style "align-items" "center"
-                        , style "justify-content" "center"
-                        , onClick UndoMove
-                        ]
-                        [ text "↩" ]
-                    , button
-                        [ style "flex" "1"
-                        , style "padding" "8px"
-                        , style "font-size" "1.2em"
-                        , style "background-color"
-                            (if model.currentMoveIndex < List.length model.moveHistory - 1 then
-                                Color.primary
-
-                             else
-                                Color.disabled
-                            )
-                        , style "color" "white"
-                        , style "border" "none"
-                        , style "border-radius" "6px"
-                        , style "cursor"
-                            (if model.currentMoveIndex < List.length model.moveHistory - 1 then
-                                "pointer"
-
-                             else
-                                "not-allowed"
-                            )
-                        , style "display" "flex"
-                        , style "align-items" "center"
-                        , style "justify-content" "center"
-                        , onClick RedoMove
-                        ]
-                        [ text "↪" ]
+                         else
+                            "not-allowed"
+                        )
+                    , style "display" "flex"
+                    , style "align-items" "center"
+                    , style "justify-content" "center"
+                    , onClick RedoMove
                     ]
-
-              else
-                text ""
+                    [ text "↪" ]
+                ]
             ]
         ]
 
@@ -1582,7 +1407,7 @@ viewBotDifficultyMenu ({ t, c } as userConfig) model =
         , viewDifficultyButton userConfig model t.hard Hard
         , viewDifficultyButton userConfig model t.elite Elite
         , case model.selectedDifficulty of
-            Just _ ->
+            Just difficulty ->
                 div
                     [ style "display" "flex"
                     , style "gap" "10px"
@@ -1598,7 +1423,7 @@ viewBotDifficultyMenu ({ t, c } as userConfig) model =
                         , style "border-radius" "6px"
                         , style "cursor" "pointer"
                         , style "font-family" "inherit"
-                        , onClick (StartWithPlayer True)
+                        , onClick (StartBotGame difficulty HumanBegins)
                         , Dom.idToAttribute (Dom.id "human-starts-button")
                         ]
                         [ text t.humanStarts ]
@@ -1612,7 +1437,7 @@ viewBotDifficultyMenu ({ t, c } as userConfig) model =
                         , style "border-radius" "6px"
                         , style "cursor" "pointer"
                         , style "font-family" "inherit"
-                        , onClick (StartWithPlayer False)
+                        , onClick (StartBotGame difficulty BotBegins)
                         , Dom.idToAttribute (Dom.id "bot-starts-button")
                         ]
                         [ text t.botStarts ]
@@ -1626,7 +1451,7 @@ viewBotDifficultyMenu ({ t, c } as userConfig) model =
                         , style "border-radius" "6px"
                         , style "cursor" "pointer"
                         , style "font-family" "inherit"
-                        , onClick StartWithRandomPlayer
+                        , onClick (StartBotGame difficulty RandomBegins)
                         , Dom.idToAttribute (Dom.id "random-starts-button")
                         ]
                         [ text t.randomStarts ]
@@ -1686,8 +1511,8 @@ playerToString t player =
             t.playerO
 
 
-viewStatus : UserConfig -> FrontendModel -> Html msg
-viewStatus ({ t, c } as userConfig) model =
+viewStatus : UserConfig -> FrontendGame -> GameMode -> Html FrontendMsg
+viewStatus ({ t, c } as userConfig) frontendGame mode =
     div
         [ style "margin" "10px 0"
         , style "color" c.text
@@ -1700,39 +1525,29 @@ viewStatus ({ t, c } as userConfig) model =
             , style "gap" "10px"
             ]
             [ text <|
-                case model.gameResult of
-                    Won ->
+                case frontendGame.gameResult of
+                    Just Won ->
                         t.youWon
 
-                    Lost ->
+                    Just Lost ->
                         t.youLost
 
-                    Drew ->
+                    Just Draw ->
                         t.draw
 
-                    Ongoing ->
-                        case model.board.winner of
-                            Just player ->
-                                case model.route of
-                                    Game OnlineGame ->
-                                        case model.onlinePlayer of
-                                            Just myRole ->
-                                                if myRole == player then
-                                                    t.youWon
+                    Nothing ->
+                        case frontendGame.winner of
+                            Just winner ->
+                                case mode of
+                                    OnlineGameMode ->
+                                        if frontendGame.self == Just winner then
+                                            t.youWon
 
-                                                else
-                                                    t.youLost
-
-                                            Nothing ->
-                                                case player of
-                                                    X ->
-                                                        t.playerXWins
-
-                                                    O ->
-                                                        t.playerOWins
+                                        else
+                                            t.youLost
 
                                     _ ->
-                                        case player of
+                                        case winner of
                                             X ->
                                                 t.playerXWins
 
@@ -1740,25 +1555,22 @@ viewStatus ({ t, c } as userConfig) model =
                                                 t.playerOWins
 
                             Nothing ->
-                                if isBigBoardComplete model.board then
+                                if isBigBoardComplete frontendGame.boards then
                                     t.draw
 
                                 else
-                                    case model.route of
-                                        Game (WithBot _) ->
-                                            if model.board.currentPlayer == O then
+                                    case mode of
+                                        WithBot _ ->
+                                            if frontendGame.botIsPlaying then
                                                 "🤖"
 
                                             else
                                                 t.yourTurn
 
-                                        Game OnlineGame ->
-                                            case model.onlinePlayer of
+                                        OnlineGameMode ->
+                                            case frontendGame.self of
                                                 Just player ->
-                                                    if model.onlineOpponent == Nothing then
-                                                        t.waitingForOpponent
-
-                                                    else if player == model.board.currentPlayer then
+                                                    if player == frontendGame.currentPlayer then
                                                         t.yourTurn
 
                                                     else
@@ -1767,13 +1579,13 @@ viewStatus ({ t, c } as userConfig) model =
                                                 Nothing ->
                                                     t.waitingForOpponent
 
-                                        _ ->
-                                            if model.board.currentPlayer == X then
+                                        WithFriend ->
+                                            if frontendGame.currentPlayer == X then
                                                 t.playerXTurn
 
                                             else
                                                 t.playerOTurn
-            , if model.botThinking then
+            , if frontendGame.botIsPlaying then
                 viewThinkingIndicator
 
               else
@@ -1813,8 +1625,49 @@ viewLanguageSelector ({ t, c } as userConfig) model =
         ]
         [ viewDarkModeButton userConfig model
         , div [ style "width" "1px", style "height" "20px", style "background-color" c.border ] []
-        , viewLanguageButton "FR" FR (model.language == Just FR) (isDark model.userPreference model.systemMode)
-        , viewLanguageButton "EN" EN (model.language == Just EN) (isDark model.userPreference model.systemMode)
+        , viewLanguageButton "FR" FR (model.localStorage.language == FR) (isDark model.localStorage.userPreference model.localStorage.systemMode)
+        , viewLanguageButton "EN" EN (model.localStorage.language == EN) (isDark model.localStorage.userPreference model.localStorage.systemMode)
+        ]
+
+
+viewSoundButton : UserConfig -> FrontendModel -> Html FrontendMsg
+viewSoundButton ({ t, c } as userConfig) model =
+    div
+        [ style "position" "absolute"
+        , style "top" "5px"
+        , style "left" "20px"
+        , style "display" "flex"
+        , style "gap" "10px"
+        , style "align-items" "center"
+        , style "background-color" (Color.withAlpha c.background 0.8)
+        , style "padding" "6px"
+        , style "border-radius" "10px"
+        , style "backdrop-filter" "blur(10px)"
+        , style "box-shadow" "0 2px 10px rgba(0, 0, 0, 0.1)"
+        , style "z-index" "1000"
+        ]
+        [ button
+            [ style "padding" "8px"
+            , style "font-size" "1.1em"
+            , style "background" "none"
+            , style "border" "none"
+            , style "cursor" "pointer"
+            , style "display" "flex"
+            , style "align-items" "center"
+            , style "justify-content" "center"
+            , style "font-family" "inherit"
+            , style "color" c.textHover
+            , style "transition" "all 0.2s ease"
+            , onClick ToggleSound
+            ]
+            [ text
+                (if model.localStorage.soundEnabled then
+                    "🔊"
+
+                 else
+                    "🔇"
+                )
+            ]
         ]
 
 
@@ -1835,7 +1688,7 @@ viewDarkModeButton ({ t, c } as userConfig) model =
         , onClick ToggleDarkMode
         ]
         [ text
-            (case model.userPreference of
+            (case model.localStorage.userPreference of
                 DarkMode ->
                     "🌙"
 
@@ -1903,47 +1756,34 @@ refactoredVersionOfViewLanguageSelector { c } selectedLang lang =
         , style "transition" "all 0.2s ease"
         , onClick (ChangeLanguage lang)
         ]
-        [ Just lang |> languageToString |> String.toUpper |> text ]
+        [ lang |> languageToString |> String.toUpper |> text ]
 
 
-viewBigBoard : UserConfig -> FrontendModel -> Html FrontendMsg
-viewBigBoard ({ t, c } as userConfig) model =
+viewBigBoard : UserConfig -> FrontendGame -> Html FrontendMsg
+viewBigBoard ({ t, c } as userConfig) frontendGame =
     let
         isBotTurn =
-            case model.route of
-                Game (WithBot _) ->
-                    model.board.currentPlayer == O && model.botThinking
-
-                _ ->
-                    False
+            frontendGame.botIsPlaying
 
         isOpponentTurn =
-            case model.route of
-                Game OnlineGame ->
-                    case model.onlinePlayer of
-                        Just player ->
-                            player /= model.board.currentPlayer
+            case frontendGame.self of
+                Just player ->
+                    player /= frontendGame.currentPlayer
 
-                        Nothing ->
-                            False
-
-                _ ->
+                Nothing ->
                     False
 
         isViewingHistory =
-            model.currentMoveIndex < List.length model.moveHistory - 1
+            frontendGame.currentMoveIndex < List.length frontendGame.moveHistory - 1
 
         shouldBlink =
             not isViewingHistory
-                && ((isBotTurn && model.board.activeBoard == Nothing)
-                        || (isOpponentTurn && model.board.activeBoard == Nothing)
+                && ((isBotTurn && frontendGame.activeBoard == Nothing)
+                        || (isOpponentTurn && frontendGame.activeBoard == Nothing)
                    )
 
-        board =
-            model.board
-
         boards =
-            board.boards
+            frontendGame.boards
 
         boardStyle =
             [ style "display" "grid"
@@ -1958,7 +1798,7 @@ viewBigBoard ({ t, c } as userConfig) model =
             ]
 
         boardElements =
-            List.indexedMap (viewSmallBoard userConfig model) boards
+            List.indexedMap (viewSmallBoard userConfig frontendGame) boards
 
         blinkStyle =
             if shouldBlink then
@@ -1972,11 +1812,11 @@ viewBigBoard ({ t, c } as userConfig) model =
         boardElements
 
 
-viewSmallBoard : UserConfig -> FrontendModel -> Int -> SmallBoard -> Html FrontendMsg
-viewSmallBoard ({ t, c } as userConfig) model boardIndex smallBoardData =
+viewSmallBoard : UserConfig -> FrontendGame -> Int -> SmallBoard -> Html FrontendMsg
+viewSmallBoard ({ t, c } as userConfig) frontendGame boardIndex smallBoardData =
     let
         isActive =
-            case model.board.activeBoard of
+            case frontendGame.activeBoard of
                 Nothing ->
                     True
 
@@ -1984,80 +1824,31 @@ viewSmallBoard ({ t, c } as userConfig) model boardIndex smallBoardData =
                     boardIndex == activeBoardIndex
 
         isBotTurn =
-            case model.route of
-                Game (WithBot _) ->
-                    model.board.currentPlayer == O && model.botThinking
-
-                _ ->
-                    False
+            frontendGame.botIsPlaying
 
         isOpponentTurn =
-            case model.route of
-                Game OnlineGame ->
-                    case model.onlinePlayer of
-                        Just player ->
-                            player /= model.board.currentPlayer
+            case frontendGame.self of
+                Just player ->
+                    player /= frontendGame.currentPlayer
 
-                        Nothing ->
-                            False
-
-                _ ->
+                Nothing ->
                     False
 
         isViewingHistory =
-            model.currentMoveIndex < List.length model.moveHistory - 1
-
-        isTutorialBoard =
-            case model.tutorialState of
-                Just TutorialBasicMove ->
-                    boardIndex == 4
-
-                Just TutorialBoardSelection ->
-                    True
-
-                Just TutorialWinningSmall ->
-                    boardIndex == 4
-
-                Just TutorialWinningBig ->
-                    boardIndex == 8
-
-                _ ->
-                    True
+            frontendGame.currentMoveIndex < List.length frontendGame.moveHistory - 1
 
         isClickable =
             isActive
                 && not isBotTurn
                 && not isOpponentTurn
                 && not isViewingHistory
-                && (case model.tutorialState of
-                        Just TutorialBoardSelection ->
-                            False
-
-                        Just TutorialWinningSmall ->
-                            boardIndex == 4
-
-                        Just TutorialFreeChoice ->
-                            False
-
-                        _ ->
-                            isTutorialBoard
-                   )
 
         borderColor =
-            case model.tutorialState of
-                Just TutorialBoardSelection ->
-                    if boardIndex == 2 then
-                        Color.success
+            if isActive then
+                Color.success
 
-                    else
-                        c.border
-
-                _ ->
-                    if isActive then
-                        Color.success
-
-                    else
-                        c.border
+            else
+                c.border
 
         backgroundColor =
             case smallBoardData.winner of
@@ -2068,23 +1859,19 @@ viewSmallBoard ({ t, c } as userConfig) model boardIndex smallBoardData =
                     Color.playerO
 
                 Nothing ->
-                    if not isTutorialBoard then
-                        Color.disabled
-
-                    else
-                        c.background
+                    c.background
 
         cellStyle =
             [ style "box-shadow" ("inset 0 0 0 1px " ++ c.border) ]
 
         shouldBlink =
             not isViewingHistory
-                && ((isActive && isBotTurn && model.board.activeBoard /= Nothing)
+                && ((isActive && isBotTurn && frontendGame.activeBoard /= Nothing)
                         || (isActive && isOpponentTurn)
                    )
 
         cellElements =
-            List.indexedMap (viewCell userConfig model boardIndex isClickable cellStyle) smallBoardData.cells
+            List.indexedMap (viewCell userConfig frontendGame boardIndex isClickable cellStyle) smallBoardData.cells
 
         blinkStyle =
             if shouldBlink then
@@ -2092,22 +1879,6 @@ viewSmallBoard ({ t, c } as userConfig) model boardIndex smallBoardData =
 
             else
                 []
-
-        opacity =
-            case model.tutorialState of
-                Just TutorialWinningSmall ->
-                    if boardIndex /= 4 then
-                        [ style "opacity" "0.5" ]
-
-                    else
-                        []
-
-                _ ->
-                    if not isTutorialBoard then
-                        [ style "opacity" "0.5" ]
-
-                    else
-                        []
     in
     div
         ([ style "background-color" backgroundColor
@@ -2120,163 +1891,151 @@ viewSmallBoard ({ t, c } as userConfig) model boardIndex smallBoardData =
          , style "box-shadow" ("0 0 0 2px " ++ borderColor)
          ]
             ++ blinkStyle
-            ++ opacity
         )
         cellElements
 
 
-viewCell : UserConfig -> FrontendModel -> Int -> Bool -> List (Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
-viewCell ({ t, c } as userConfig) model boardIndex isClickable cellStyles cellIndex cellState =
-    case model.tutorialState of
-        Just _ ->
-            Tutorial.View.viewTutorialCell userConfig
-                model
-                boardIndex
-                (if isClickable then
-                    1
+viewCell : UserConfig -> FrontendGame -> Int -> Bool -> List (Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
+viewCell ({ t, c } as userConfig) frontendGame boardIndex isClickable cellStyles cellIndex cellState =
+    let
+        ( symbol, textColor ) =
+            case cellState of
+                Empty ->
+                    ( Html.text ""
+                    , c.text
+                    )
 
-                 else
-                    0
-                )
-                cellStyles
-                cellIndex
-                cellState
-
-        Nothing ->
-            let
-                ( symbol, textColor ) =
-                    case cellState of
-                        Empty ->
-                            ( Html.text ""
-                            , c.text
-                            )
-
-                        Filled X ->
-                            ( div [ style "width" "100%", style "height" "100%", style "position" "relative" ]
-                                [ svg
-                                    [ Svg.Attributes.viewBox "0 0 100 100"
-                                    , Svg.Attributes.width "100%"
-                                    , Svg.Attributes.height "100%"
-                                    , Svg.Attributes.fill "none"
-                                    , Svg.Attributes.stroke Color.danger
-                                    , Svg.Attributes.strokeWidth "10"
-                                    , Svg.Attributes.strokeLinecap "round"
-                                    , style "position" "absolute"
-                                    , style "top" "0"
-                                    , style "left" "0"
-                                    ]
-                                    [ line
-                                        [ Svg.Attributes.x1 "20"
-                                        , Svg.Attributes.y1 "20"
-                                        , Svg.Attributes.x2 "80"
-                                        , Svg.Attributes.y2 "80"
-                                        ]
-                                        []
-                                    , line
-                                        [ Svg.Attributes.x1 "80"
-                                        , Svg.Attributes.y1 "20"
-                                        , Svg.Attributes.x2 "20"
-                                        , Svg.Attributes.y2 "80"
-                                        ]
-                                        []
-                                    ]
+                Filled X ->
+                    ( div [ style "width" "100%", style "height" "100%", style "position" "relative" ]
+                        [ svg
+                            [ Svg.Attributes.viewBox "0 0 100 100"
+                            , Svg.Attributes.width "100%"
+                            , Svg.Attributes.height "100%"
+                            , Svg.Attributes.fill "none"
+                            , Svg.Attributes.stroke Color.danger
+                            , Svg.Attributes.strokeWidth "10"
+                            , Svg.Attributes.strokeLinecap "round"
+                            , style "position" "absolute"
+                            , style "top" "0"
+                            , style "left" "0"
+                            ]
+                            [ line
+                                [ Svg.Attributes.x1 "20"
+                                , Svg.Attributes.y1 "20"
+                                , Svg.Attributes.x2 "80"
+                                , Svg.Attributes.y2 "80"
                                 ]
-                            , Color.danger
-                            )
-
-                        Filled O ->
-                            ( div [ style "width" "100%", style "height" "100%", style "position" "relative" ]
-                                [ svg
-                                    [ Svg.Attributes.viewBox "0 0 100 100"
-                                    , Svg.Attributes.width "100%"
-                                    , Svg.Attributes.height "100%"
-                                    , Svg.Attributes.fill "none"
-                                    , Svg.Attributes.stroke Color.primary
-                                    , Svg.Attributes.strokeWidth "10"
-                                    , Svg.Attributes.strokeLinecap "round"
-                                    , style "position" "absolute"
-                                    , style "top" "0"
-                                    , style "left" "0"
-                                    ]
-                                    [ circle
-                                        [ Svg.Attributes.cx "50"
-                                        , Svg.Attributes.cy "50"
-                                        , Svg.Attributes.r "35"
-                                        ]
-                                        []
-                                    ]
+                                []
+                            , line
+                                [ Svg.Attributes.x1 "80"
+                                , Svg.Attributes.y1 "20"
+                                , Svg.Attributes.x2 "20"
+                                , Svg.Attributes.y2 "80"
                                 ]
-                            , Color.primary
-                            )
-
-                isCellClickable =
-                    isClickable && cellState == Empty
-
-                cursor =
-                    if isCellClickable then
-                        "pointer"
-
-                    else
-                        "default"
-
-                cornerRadius =
-                    case cellIndex of
-                        0 ->
-                            [ style "border-top-left-radius" "4px" ]
-
-                        2 ->
-                            [ style "border-top-right-radius" "4px" ]
-
-                        6 ->
-                            [ style "border-bottom-left-radius" "4px" ]
-
-                        8 ->
-                            [ style "border-bottom-right-radius" "4px" ]
-
-                        _ ->
-                            []
-
-                isLastMove =
-                    case model.board.lastMove of
-                        Just move ->
-                            move.boardIndex == boardIndex && move.cellIndex == cellIndex
-
-                        Nothing ->
-                            False
-
-                lastMoveHighlight =
-                    if isLastMove then
-                        [ style "box-shadow" "inset 0 0 0 2px #4CAF50"
-                        , style "background-color" (c.background ++ "CC") -- Add some transparency
+                                []
+                            ]
                         ]
+                    , Color.danger
+                    )
 
-                    else
-                        []
-            in
-            div
-                ([ style "width" "100%"
-                 , style "aspect-ratio" "1/1"
-                 , style "background-color" c.background
-                 , style "display" "flex"
-                 , style "align-items" "center"
-                 , style "justify-content" "center"
-                 , style "cursor" cursor
-                 , style "color" textColor
-                 , style "user-select" "none"
-                 , style "position" "relative"
-                 , Dom.idToAttribute (cellId boardIndex cellIndex)
-                 ]
-                    ++ cornerRadius
-                    ++ cellStyles
-                    ++ lastMoveHighlight
-                    ++ (if isCellClickable then
-                            [ onClick (CellClicked boardIndex cellIndex) ]
+                Filled O ->
+                    ( div [ style "width" "100%", style "height" "100%", style "position" "relative" ]
+                        [ svg
+                            [ Svg.Attributes.viewBox "0 0 100 100"
+                            , Svg.Attributes.width "100%"
+                            , Svg.Attributes.height "100%"
+                            , Svg.Attributes.fill "none"
+                            , Svg.Attributes.stroke Color.primary
+                            , Svg.Attributes.strokeWidth "10"
+                            , Svg.Attributes.strokeLinecap "round"
+                            , style "position" "absolute"
+                            , style "top" "0"
+                            , style "left" "0"
+                            ]
+                            [ circle
+                                [ Svg.Attributes.cx "50"
+                                , Svg.Attributes.cy "50"
+                                , Svg.Attributes.r "35"
+                                ]
+                                []
+                            ]
+                        ]
+                    , Color.primary
+                    )
 
-                        else
-                            []
-                       )
-                )
-                [ symbol ]
+        isCellClickable =
+            isClickable && cellState == Empty
+
+        cursor =
+            if isCellClickable then
+                case frontendGame.currentPlayer of
+                    X ->
+                        "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 100 100' fill='none' stroke='%23dc3545' stroke-width='10' stroke-linecap='round'%3E%3Cline x1='20' y1='20' x2='80' y2='80'/%3E%3Cline x1='80' y1='20' x2='20' y2='80'/%3E%3C/svg%3E\") 12 12, pointer"
+
+                    O ->
+                        "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 100 100' fill='none' stroke='%230d6efd' stroke-width='10' stroke-linecap='round'%3E%3Ccircle cx='50' cy='50' r='35'/%3E%3C/svg%3E\") 12 12, pointer"
+
+            else
+                "default"
+
+        cornerRadius =
+            case cellIndex of
+                0 ->
+                    [ style "border-top-left-radius" "4px" ]
+
+                2 ->
+                    [ style "border-top-right-radius" "4px" ]
+
+                6 ->
+                    [ style "border-bottom-left-radius" "4px" ]
+
+                8 ->
+                    [ style "border-bottom-right-radius" "4px" ]
+
+                _ ->
+                    []
+
+        isLastMove =
+            case frontendGame.lastMove of
+                Just move ->
+                    move.boardIndex == boardIndex && move.cellIndex == cellIndex
+
+                Nothing ->
+                    False
+
+        lastMoveHighlight =
+            if isLastMove then
+                [ style "box-shadow" "inset 0 0 0 2px #4CAF50"
+                , style "background-color" (c.background ++ "CC") -- Add some transparency
+                ]
+
+            else
+                []
+    in
+    div
+        ([ style "width" "100%"
+         , style "aspect-ratio" "1/1"
+         , style "background-color" c.background
+         , style "display" "flex"
+         , style "align-items" "center"
+         , style "justify-content" "center"
+         , style "cursor" cursor
+         , style "color" textColor
+         , style "user-select" "none"
+         , style "position" "relative"
+         , Dom.idToAttribute (cellId boardIndex cellIndex)
+         ]
+            ++ cornerRadius
+            ++ cellStyles
+            ++ lastMoveHighlight
+            ++ (if isCellClickable then
+                    [ onClick (CellClicked { boardIndex = boardIndex, cellIndex = cellIndex }) ]
+
+                else
+                    []
+               )
+        )
+        [ symbol ]
 
 
 cellId : Int -> Int -> HtmlId
@@ -2288,21 +2047,25 @@ subscriptions : FrontendModel -> Subscription FrontendOnly FrontendMsg
 subscriptions model =
     Subscription.batch
         [ LocalStorage.receiveLocalStorage ReceivedLocalStorage
-        , Effect.Browser.Events.onKeyDown
-            (D.map
-                (\key ->
-                    case key of
-                        "ArrowLeft" ->
-                            KeyLeft
+        , if model.tutorialState == Nothing then
+            Effect.Browser.Events.onKeyDown
+                (D.map
+                    (\key ->
+                        case key of
+                            "ArrowLeft" ->
+                                KeyLeft
 
-                        "ArrowRight" ->
-                            KeyRight
+                            "ArrowRight" ->
+                                KeyRight
 
-                        _ ->
-                            NoOp
+                            _ ->
+                                NoOp
+                    )
+                    (D.field "key" D.string)
                 )
-                (D.field "key" D.string)
-            )
+
+          else
+            Subscription.none
         , if model.isDraggingDebugger then
             Subscription.batch
                 [ Effect.Browser.Events.onMouseMove
@@ -2330,27 +2093,39 @@ subscriptions model =
         ]
 
 
-reconstructBoardFromMoves : List Move -> Int -> BigBoard -> BigBoard
+reconstructBoardFromMoves : List Move -> Int -> FrontendGame -> FrontendGame
 reconstructBoardFromMoves moves upToIndex initialBoardState =
     let
         movesToApply =
             List.take (upToIndex + 1) moves
 
+        freshBoard : FrontendGame
         freshBoard =
-            { boards = List.repeat 9 emptySmallBoard
-            , currentPlayer = initialBoardState.initialPlayer
-            , activeBoard = Nothing
-            , winner = Nothing
-            , initialPlayer = initialBoardState.initialPlayer
-            , lastMove = Nothing
+            { initialBoardState
+                | boards = List.repeat 9 emptySmallBoard
+                , botIsPlaying = initialBoardState.botIsPlaying
+                , currentMoveIndex = upToIndex
+                , activeBoard = Nothing
+                , lastMove = Nothing
+                , currentPlayer = X
             }
     in
     List.foldl
         (\move board ->
-            GameLogic.makeMove board move.boardIndex move.cellIndex board.currentPlayer
+            GameLogic.makeMove board move board.currentPlayer
         )
         freshBoard
         movesToApply
+
+
+switchPlayer : Player -> Player
+switchPlayer player =
+    case player of
+        X ->
+            O
+
+        O ->
+            X
 
 
 viewRulesModal : UserConfig -> FrontendModel -> Html FrontendMsg
@@ -2382,176 +2157,22 @@ viewRulesModal ({ t, c } as userConfig) model =
         ]
 
 
-shouldEnableNextButton : FrontendModel -> Bool
-shouldEnableNextButton model =
-    case model.tutorialState of
-        Just step ->
-            case step of
-                TutorialBasicMove ->
-                    let
-                        centerBoard =
-                            List.getAt 4 model.board.boards
-                                |> Maybe.withDefault GameLogic.emptySmallBoard
-                    in
-                    List.getAt 2 centerBoard.cells == Just (Filled X)
-
-                TutorialBoardSelection ->
-                    True
-
-                TutorialWinningSmall ->
-                    let
-                        centerBoard =
-                            List.getAt 4 model.board.boards
-                                |> Maybe.withDefault GameLogic.emptySmallBoard
-                    in
-                    centerBoard.winner == Just X
-
-                TutorialFreeChoice ->
-                    True
-
-                TutorialWinningBig ->
-                    model.board.winner == Just X
-
-        Nothing ->
-            False
-
-
-viewTutorialOverlay : UserConfig -> FrontendModel -> Html FrontendMsg
-viewTutorialOverlay ({ t, c } as userConfig) model =
-    case model.tutorialState of
-        Just step ->
-            let
-                tutorialMessage =
-                    case step of
-                        TutorialBasicMove ->
-                            t.tutorialBasicMove
-
-                        TutorialBoardSelection ->
-                            t.tutorialBoardSelection
-
-                        TutorialWinningSmall ->
-                            t.tutorialWinningSmall
-
-                        TutorialWinningBig ->
-                            t.tutorialWinningBig
-
-                        TutorialFreeChoice ->
-                            t.tutorialFreeChoice
-
-                stepNumber =
-                    case step of
-                        TutorialBasicMove ->
-                            1
-
-                        TutorialBoardSelection ->
-                            2
-
-                        TutorialWinningSmall ->
-                            3
-
-                        TutorialFreeChoice ->
-                            4
-
-                        TutorialWinningBig ->
-                            5
-
-                overlayStyles =
-                    case step of
-                        TutorialWinningBig ->
-                            [ style "bottom" "70%"
-                            , style "transform" "translate(-50%, 0%)"
-                            ]
-
-                        _ ->
-                            [ style "bottom" "0px"
-                            , style "left" "0"
-                            , style "right" "0"
-                            , style "margin-left" "auto"
-                            , style "margin-right" "auto"
-                            ]
-
-                isNextEnabled =
-                    shouldEnableNextButton model
-
-                buttons =
-                    if isNextEnabled then
-                        [ button
-                            [ style "padding" "10px 20px"
-                            , style "font-size" "0.9em"
-                            , style "background-color" Color.primary
-                            , style "color" "white"
-                            , style "border" "none"
-                            , style "border-radius" "6px"
-                            , style "cursor" "pointer"
-                            , style "transition" "all 0.2s ease"
-                            , onClick NextTutorialStep
-                            ]
-                            [ text t.nextStep ]
-                        ]
-
-                    else
-                        []
-            in
-            div
-                ([ style "position" "fixed"
-                 , style "left" "50%"
-                 , style "background-color" (Color.withAlpha c.background 0.85)
-                 , style "padding" "20px"
-                 , style "border-radius" "15px"
-                 , style "box-shadow" "0 4px 12px rgba(0, 0, 0, 0.2)"
-                 , style "max-width" "90%"
-                 , style "width" "600px"
-                 , style "text-align" "center"
-                 , style "animation" "slideIn 0.3s ease-out"
-                 , style "z-index" "1000"
-                 , style "backdrop-filter" "blur(5px)"
-                 ]
-                    ++ overlayStyles
-                )
-                [ div
-                    [ style "margin-bottom" "10px"
-                    , style "color" c.text
-                    , style "font-size" "0.8em"
-                    ]
-                    [ text (String.fromInt stepNumber ++ "/6") ]
-                , p
-                    [ style "margin" "0 0 15px 0"
-                    , style "color" c.text
-                    , style "font-size" "1em"
-                    , style "line-height" "1.5"
-                    ]
-                    [ text tutorialMessage ]
-                , div
-                    [ style "display" "flex"
-                    , style "gap" "10px"
-                    , style "justify-content" "center"
-                    ]
-                    buttons
-                ]
-
-        _ ->
-            text ""
-
-
-viewGameResultModal : UserConfig -> FrontendModel -> Html FrontendMsg
-viewGameResultModal ({ t, c } as userConfig) model =
+viewGameResultModal : UserConfig -> GameResult -> Html FrontendMsg
+viewGameResultModal ({ t, c } as userConfig) gameResult =
     div
         Modal.overlay
         [ div
             (Modal.container c)
             [ T.h2 c
-                (case model.gameResult of
+                (case gameResult of
                     Won ->
                         t.youWon
 
                     Lost ->
                         t.youLost
 
-                    Drew ->
+                    Draw ->
                         t.draw
-
-                    Ongoing ->
-                        ""
                 )
             , button
                 (Button.primary userConfig
@@ -2565,7 +2186,7 @@ viewGameResultModal ({ t, c } as userConfig) model =
 
 
 viewLoadingScreen : UserConfig -> FrontendModel -> Html FrontendMsg
-viewLoadingScreen { c, t } model =
+viewLoadingScreen { c } model =
     div
         (Container.fullscreen
             ++ Layout.flexCenter
@@ -2573,6 +2194,7 @@ viewLoadingScreen { c, t } model =
                ]
             ++ (if model.isLoading then
                     Animation.fadeIn
+
                 else
                     Animation.fadeOut
                )

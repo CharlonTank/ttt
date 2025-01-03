@@ -6,6 +6,7 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
 import I18n exposing (languageToString)
 import Json.Decode as D
+import LocalStorage exposing (LocalStorage)
 import Theme exposing (..)
 import Types exposing (..)
 
@@ -70,12 +71,12 @@ view { c } model =
                 , style "padding-right" "10px"
                 ]
                 [ text "Local Storage:\n"
-                , model.localStorage |> Maybe.map localStorageToString |> Maybe.withDefault "" |> text
+                , model.localStorage |> localStorageToString |> text
                 , text "\nModel State:\n"
-                , text <| "language: " ++ (model.language |> languageToString) ++ "\n"
-                , text <| "userPreference: " ++ userPreferenceToString model.userPreference model.systemMode ++ "\n\n"
+                , text <| "language: " ++ (model.localStorage.language |> languageToString) ++ "\n"
+                , text <| "userPreference: " ++ userPreferenceToString model.localStorage.userPreference model.localStorage.systemMode ++ "\n\n"
                 , text "Game State:\n"
-                , text <| boardToString model.board
+                , model.frontendGame |> Maybe.map gameToString |> Maybe.withDefault "No frontend game found" |> text
                 ]
             , div
                 [ style "position" "absolute"
@@ -96,8 +97,8 @@ view { c } model =
         []
 
 
-boardToString : BigBoard -> String
-boardToString board =
+gameToString : FrontendGame -> String
+gameToString game =
     let
         cellStateToString : CellState -> String
         cellStateToString state =
@@ -131,11 +132,19 @@ boardToString board =
                                     "Just O"
                    )
                 ++ " }"
+
+        moveToString : Move -> String
+        moveToString move =
+            "{ boardIndex = "
+                ++ String.fromInt move.boardIndex
+                ++ ", cellIndex = "
+                ++ String.fromInt move.cellIndex
+                ++ " }"
     in
     "{ boards = ["
-        ++ String.join ",\n  " (List.map smallBoardToString board.boards)
+        ++ String.join ",\n  " (List.map smallBoardToString game.boards)
         ++ "],\n  currentPlayer = "
-        ++ (case board.currentPlayer of
+        ++ (case game.currentPlayer of
                 X ->
                     "X"
 
@@ -143,7 +152,7 @@ boardToString board =
                     "O"
            )
         ++ ",\n  activeBoard = "
-        ++ (case board.activeBoard of
+        ++ (case game.activeBoard of
                 Nothing ->
                     "Nothing"
 
@@ -151,7 +160,7 @@ boardToString board =
                     "Just " ++ String.fromInt n
            )
         ++ ",\n  winner = "
-        ++ (case board.winner of
+        ++ (case game.winner of
                 Nothing ->
                     "Nothing"
 
@@ -163,13 +172,17 @@ boardToString board =
                         O ->
                             "Just O"
            )
+        ++ ",\n  moveHistory = ["
+        ++ String.join ", " (List.map moveToString game.moveHistory)
+        ++ "],\n  currentMoveIndex = "
+        ++ String.fromInt game.currentMoveIndex
         ++ " }"
 
 
 localStorageToString : LocalStorage -> String
 localStorageToString localStorage =
     "language: "
-        ++ languageToString (Just localStorage.language)
+        ++ languageToString localStorage.language
         ++ "\n"
         ++ "userPreference: "
         ++ userPreferenceToString localStorage.userPreference localStorage.systemMode

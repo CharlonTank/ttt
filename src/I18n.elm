@@ -49,6 +49,7 @@ type alias Translation =
     , tutorialTitle : String
     , playerX : String
     , playerO : String
+    , playingTutorial : String
     }
 
 
@@ -61,6 +62,7 @@ translations lang =
             , playWithFriend = "Jouer hors ligne avec un ami"
             , playWithBot = "Jouer contre le bot"
             , playOnline = "Jouer en ligne"
+            , playingTutorial = "Mode : Tutoriel"
             , searching = "Recherche d'un adversaire"
             , chooseDifficulty = "Choisissez la difficulté"
             , easy = "Facile"
@@ -111,6 +113,7 @@ translations lang =
             , playWithFriend = "Play offline with a friend"
             , playWithBot = "Play with bot"
             , playOnline = "Play online"
+            , playingTutorial = "Mode: Tutorial"
             , searching = "Searching for opponent"
             , chooseDifficulty = "Choose difficulty"
             , easy = "Easy"
@@ -161,16 +164,13 @@ type Language
     | EN
 
 
-languageToString : Maybe Language -> String
+languageToString : Language -> String
 languageToString lang =
     case lang of
-        Just FR ->
+        FR ->
             "fr"
 
-        Just EN ->
-            "en"
-
-        Nothing ->
+        EN ->
             "en"
 
 
