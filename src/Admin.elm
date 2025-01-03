@@ -20,6 +20,8 @@ view { t, c } model =
                 [ style "min-height" "100vh"
                 , style "background-color" c.background
                 , style "padding" "40px"
+                , style "padding-left" "20px"
+                , style "padding-right" "20px"
                 ]
                 [ div
                     [ style "max-width" "1200px"
@@ -40,8 +42,13 @@ view { t, c } model =
                             , style "display" "flex"
                             , style "align-items" "center"
                             , style "gap" "10px"
+                            , style "@media (max-width: 600px)" "font-size: 20px"
                             ]
-                            [ span [ style "font-size" "32px" ] [ text "🎮" ]
+                            [ span 
+                                [ style "font-size" "32px"
+                                , style "@media (max-width: 600px)" "font-size: 24px"
+                                ] 
+                                [ text "🎮" ]
                             , text "Admin Dashboard"
                             ]
                         ]
@@ -54,8 +61,13 @@ view { t, c } model =
                                 , style "display" "flex"
                                 , style "align-items" "center"
                                 , style "gap" "10px"
+                                , style "@media (max-width: 600px)" "font-size: 18px"
                                 ]
-                                [ span [ style "font-size" "24px" ] [ text "🎲" ]
+                                [ span 
+                                    [ style "font-size" "24px"
+                                    , style "@media (max-width: 600px)" "font-size: 18px"
+                                    ] 
+                                    [ text "🎲" ]
                                 , text "Active Games"
                                 ]
                             , viewActiveGames c backendModel.activeGames
@@ -68,13 +80,18 @@ view { t, c } model =
                                 , style "display" "flex"
                                 , style "align-items" "center"
                                 , style "gap" "10px"
+                                , style "@media (max-width: 600px)" "font-size: 18px"
                                 ]
-                                [ span [ style "font-size" "24px" ] [ text "👥" ]
+                                [ span 
+                                    [ style "font-size" "24px"
+                                    , style "@media (max-width: 600px)" "font-size: 18px"
+                                    ] 
+                                    [ text "👥" ]
                                 , text "Matchmaking Queue"
                                 ]
                             , viewMatchmakingQueue c backendModel.matchmakingQueue
                             ]
-                        ,div [ style "margin-bottom" "40px" ]
+                        , div [ style "margin-bottom" "40px" ]
                             [ h2
                                 [ style "margin" "0 0 20px 0"
                                 , style "font-size" "24px"
@@ -82,8 +99,13 @@ view { t, c } model =
                                 , style "display" "flex"
                                 , style "align-items" "center"
                                 , style "gap" "10px"
+                                , style "@media (max-width: 600px)" "font-size: 18px"
                                 ]
-                                [ span [ style "font-size" "24px" ] [ text "🎲" ]
+                                [ span 
+                                    [ style "font-size" "24px"
+                                    , style "@media (max-width: 600px)" "font-size: 18px"
+                                    ] 
+                                    [ text "🎲" ]
                                 , text "Finished Games"
                                 ]
                             , viewFinishedGames c backendModel.finishedGames
@@ -193,6 +215,7 @@ viewActiveGameRow c ( Id gameId, game ) =
                 , style "padding" "4px 8px"
                 , style "border-radius" "4px"
                 , style "font-family" "monospace"
+                , style "@media (max-width: 600px)" "font-size: 12px"
                 ]
                 [ text <| display4CharsFromUUID gameId
                 ]
@@ -203,6 +226,7 @@ viewActiveGameRow c ( Id gameId, game ) =
                 , style "padding" "4px 8px"
                 , style "border-radius" "4px"
                 , style "font-family" "monospace"
+                , style "@media (max-width: 600px)" "font-size: 12px"
                 ]
                 [ text (display4CharsFromSessionId game.playerX) ]
             ]
@@ -212,6 +236,7 @@ viewActiveGameRow c ( Id gameId, game ) =
                 , style "padding" "4px 8px"
                 , style "border-radius" "4px"
                 , style "font-family" "monospace"
+                , style "@media (max-width: 600px)" "font-size: 12px"
                 ]
                 [ text (display4CharsFromSessionId game.playerO) ]
             ]
@@ -265,6 +290,7 @@ viewFinishedGameRow c ( Id gameId, game ) =
                 , style "padding" "4px 8px"
                 , style "border-radius" "4px"
                 , style "font-family" "monospace"
+                , style "@media (max-width: 600px)" "font-size: 12px"
                 ]
                 [ text <| display4CharsFromUUID gameId
                 ]
@@ -275,6 +301,7 @@ viewFinishedGameRow c ( Id gameId, game ) =
                 , style "padding" "4px 8px"
                 , style "border-radius" "4px"
                 , style "font-family" "monospace"
+                , style "@media (max-width: 600px)" "font-size: 12px"
                 ]
                 [ text (display4CharsFromSessionId game.playerX) ]
             ]
@@ -284,6 +311,7 @@ viewFinishedGameRow c ( Id gameId, game ) =
                 , style "padding" "4px 8px"
                 , style "border-radius" "4px"
                 , style "font-family" "monospace"
+                , style "@media (max-width: 600px)" "font-size: 12px"
                 ]
                 [ text (display4CharsFromSessionId game.playerO) ]
             ]
@@ -293,6 +321,7 @@ viewFinishedGameRow c ( Id gameId, game ) =
                 , style "padding" "6px 12px"
                 , style "border-radius" "20px"
                 , style "font-size" "14px"
+                , style "@media (max-width: 600px)" "font-size: 12px"
                 , style "background-color" (getStatusColor game.winner)
                 , style "color" "white"
                 ]
