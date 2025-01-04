@@ -2,11 +2,12 @@ module Id exposing
     ( GameId(..)
     , Id(..)
     , UserId(..)
+    , display4CharsFromClientId
     , display4CharsFromSessionId
     , display4CharsFromUUID
     )
 
-import Effect.Lamdera exposing (SessionId)
+import Effect.Lamdera exposing (ClientId, SessionId)
 import UUID exposing (UUID)
 
 
@@ -25,6 +26,11 @@ type UserId
 display4CharsFromSessionId : SessionId -> String
 display4CharsFromSessionId =
     String.left 4 << Effect.Lamdera.sessionIdToString
+
+
+display4CharsFromClientId : ClientId -> String
+display4CharsFromClientId =
+    String.left 4 << Effect.Lamdera.clientIdToString
 
 
 display4CharsFromUUID : UUID -> String

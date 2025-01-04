@@ -4,6 +4,7 @@ module GameLogic exposing
     , emptySmallBoard
     , getAllAvailableMoves
     , isBigBoardComplete
+    , isSmallBoardActive
     , isSmallBoardComplete
     , isValidMove
     , makeMove
@@ -19,6 +20,16 @@ emptySmallBoard =
     { cells = List.repeat 9 Empty
     , winner = Nothing
     }
+
+
+isSmallBoardActive : Maybe Int -> Int -> SmallBoard -> Bool
+isSmallBoardActive activeBoardIndex boardIndex board =
+    case activeBoardIndex of
+        Nothing ->
+            board.winner == Nothing
+
+        Just index ->
+            index == boardIndex
 
 
 isValidMove : OnlineGame -> Int -> Int -> Bool

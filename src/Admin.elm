@@ -1,11 +1,11 @@
 module Admin exposing (view)
 
 import Color
-import Effect.Lamdera exposing (SessionId)
+import Effect.Lamdera exposing (ClientId, SessionId)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import I18n exposing (Translation)
-import Id exposing (GameId, Id(..), display4CharsFromSessionId, display4CharsFromUUID)
+import Id exposing (GameId, Id(..), display4CharsFromClientId, display4CharsFromSessionId, display4CharsFromUUID)
 import SeqDict as Dict exposing (SeqDict)
 import Theme exposing (Theme)
 import Types exposing (..)
@@ -52,6 +52,10 @@ view { t, c } model =
                                   , emoji = "👥"
                                   , content = viewMatchmakingQueue c backendModel.matchmakingQueue
                                   }
+                                , { title = "Sessions"
+                                  , emoji = "🔑"
+                                  , content = viewSessions c backendModel.sessions
+                                  }
                                 , { title = "Finished Games"
                                   , emoji = "🏆"
                                   , content = viewFinishedGames c backendModel.finishedGames
@@ -91,7 +95,7 @@ viewStyles =
             .admin-table code {
                 padding: 4px 8px;
             }
-            @media (max-width: 700px) {
+            @media (max-width: 600px) {
                 .admin-title { font-size: 20px !important; }
                 .admin-emoji { font-size: 24px !important; }
                 .admin-section-title { font-size: 18px !important; }
@@ -209,7 +213,6 @@ viewTableHeader c text_ =
         , style "text-align" "left"
         , style "color" c.text
         , style "font-weight" "600"
-        , style "text-transform" "uppercase"
         , style "font-size" "14px"
         , style "letter-spacing" "0.5px"
         ]
@@ -313,6 +316,42 @@ viewGameStatus game =
                     "Draw"
             )
         ]
+
+
+viewSessions : Theme -> SeqDict SessionId (List ClientId) -> Html FrontendMsg
+viewSessions c sessions =
+    viewTable c
+        { headers = [ "SessionID", "ClientIDs", "#Clients" ]
+        , rows =
+            Dict.toList sessions
+                |> List.map
+                    (\( sessionId, clients ) ->
+                        [ viewCode c (display4CharsFromSessionId sessionId)
+                        , div []
+                            [ case List.take 2 clients of
+                                [] ->
+                                    text "-"
+
+                                [ clientId ] ->
+                                    viewCode c (display4CharsFromClientId clientId)
+
+                                clientId1 :: clientId2 :: _ ->
+                                    div []
+                                        [ viewCode c (display4CharsFromClientId clientId1)
+                                        , text " "
+                                        , viewCode c (display4CharsFromClientId clientId2)
+                                        , if List.length clients > 2 then
+                                            text " ..."
+
+                                          else
+                                            text ""
+                                        ]
+                            ]
+                        , text (String.fromInt (List.length clients))
+                        ]
+                    )
+        , emptyMessage = "No active sessions"
+        }
 
 
 playerToString : Player -> String

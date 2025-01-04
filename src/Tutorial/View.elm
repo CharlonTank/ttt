@@ -168,12 +168,7 @@ viewSmallBoardTutorial : UserConfig -> TutorialStep -> FrontendGame -> Int -> Sm
 viewSmallBoardTutorial ({ c } as userConfig) tutorialStep frontendGame boardIndex smallBoardData =
     let
         isActive =
-            case frontendGame.activeBoard of
-                Just activeBoardIndex ->
-                    activeBoardIndex == boardIndex
-
-                Nothing ->
-                    True
+            GameLogic.isSmallBoardActive frontendGame.activeBoard boardIndex smallBoardData
 
         isViewingHistory =
             frontendGame.currentMoveIndex < List.length frontendGame.moveHistory - 1

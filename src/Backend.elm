@@ -57,100 +57,75 @@ update msg model =
             ( model, Command.none )
 
         ClientConnected sessionId clientId ->
-            case Dict.get sessionId model.sessions of
-                Just oldSession ->
-                    case oldSession.activity of
-                        InGame (Id existingGameId) ->
-                            let
-                                newSession =
-                                    { oldSession
-                                        | clientIds = clientId :: oldSession.clientIds
-                                    }
-
-                                updatedSessions =
-                                    Dict.insert sessionId newSession model.sessions
-
-                                maybeFrontendGame =
-                                    model.activeGames
-                                        |> Dict.get (Id existingGameId)
-                                        |> Maybe.map (toFrontendGame sessionId)
-                            in
-                            ( { model | sessions = updatedSessions }
-                            , case maybeFrontendGame of
-                                Just frontendGame ->
-                                    Effect.Lamdera.sendToFrontend clientId (SendGameToFrontend frontendGame)
-
+            let
+                updatedSessions =
+                    Dict.update sessionId
+                        (\mbClients ->
+                            case mbClients of
                                 Nothing ->
-                                    Command.none
-                            )
+                                    Just [ clientId ]
 
-                        InQueue ->
-                            -- If this session is already in the matchmaking queue:
-                            let
-                                newSession =
-                                    { oldSession
-                                        | clientIds = clientId :: oldSession.clientIds
+                                Just clients ->
+                                    Just (clientId :: clients)
+                        )
+                        model.sessions
+            in
+            if List.member sessionId model.matchmakingQueue then
+                ( { model | sessions = updatedSessions }
+                , Effect.Lamdera.sendToFrontend clientId AlreadyInMatchmakingToFrontend
+                )
 
-                                        -- Possibly keep them in queue or do something else
-                                    }
+            else
+                let
+                    fGame =
+                        model.activeGames
+                            |> Dict.filter (\_ g -> g.playerX == sessionId || g.playerO == sessionId)
+                            |> Dict.values
+                            |> List.head
+                            |> Maybe.map (\g -> toFrontendGame sessionId g)
+                in
+                case fGame of
+                    Just game ->
+                        ( { model | sessions = updatedSessions }
+                        , Effect.Lamdera.sendToFrontend clientId (SendGameToFrontend game)
+                        )
 
-                                updatedSessions =
-                                    Dict.insert sessionId newSession model.sessions
-                            in
-                            ( { model | sessions = updatedSessions }
-                            , Command.none
-                            )
-
-                        Available ->
-                            -- If this session was not doing anything special:
-                            let
-                                newSession =
-                                    { oldSession
-                                        | clientIds = clientId :: oldSession.clientIds
-
-                                        -- Maybe switch them to “InQueue” or keep them “Available”
-                                    }
-
-                                updatedSessions =
-                                    Dict.insert sessionId newSession model.sessions
-                            in
-                            ( { model | sessions = updatedSessions }
-                            , Command.none
-                            )
-
-                Nothing ->
-                    -- If we had no record for this session yet, create a brand new one:
-                    let
-                        newSession =
-                            { clientIds = [ clientId ]
-                            , activity = Available
-
-                            -- or InQueue, or however you want them to start
-                            }
-
-                        updatedSessions =
-                            Dict.insert sessionId newSession model.sessions
-                    in
-                    ( { model | sessions = updatedSessions }
-                    , Command.none
-                    )
+                    Nothing ->
+                        ( { model | sessions = updatedSessions }
+                        , Command.none
+                        )
 
         ClientDisconnected sessionId clientId ->
-            case Dict.get sessionId model.sessions of
-                Just session ->
-                    let
-                        shouldForfeit =
-                            not (List.member clientId session.clientIds)
-                                && isPlayerInGame sessionId model
-                    in
-                    if shouldForfeit then
-                        handleGameAbandon sessionId model
+            let
+                updatedSessions =
+                    Dict.updateIfExists sessionId
+                        (List.filter ((/=) clientId))
+                        model.sessions
 
-                    else
-                        ( model, Command.none )
+                isLastClient =
+                    case Dict.get sessionId updatedSessions of
+                        Nothing ->
+                            True
 
-                Nothing ->
-                    ( model, Command.none )
+                        Just clients ->
+                            List.isEmpty clients
+            in
+            if isLastClient then
+                let
+                    updatedModel =
+                        { model
+                            | sessions = updatedSessions
+                            , matchmakingQueue = List.filter ((/=) sessionId) model.matchmakingQueue
+                        }
+                in
+                if isPlayerInGame sessionId updatedModel then
+                    disconnectFromGame sessionId updatedModel
+
+                else
+                    ( updatedModel, Command.none )
+
+            else
+                ( { model | sessions = updatedSessions }, Command.none )
 
 
 toFrontendGame : SessionId -> OnlineGame -> FrontendGame
@@ -163,7 +138,8 @@ toFrontendGame selfId game =
             else
                 ( O, OnlineOpponent game.playerX )
     in
-    { self = Just self
+    { id = Just game.id
+    , self = Just self
     , opponent = opponent
     , boards = game.boards
     , currentPlayer = game.currentPlayer
@@ -186,43 +162,54 @@ isPlayerInGame sessionId model =
             )
 
 
-handleGameAbandon : SessionId -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
-handleGameAbandon sessionId model =
-    let
-        ( updatedGames, gameToUpdate ) =
-            Dict.toList model.activeGames
-                |> List.foldl
-                    (\( gameId, game ) ( games, found ) ->
-                        if game.playerX == sessionId then
-                            ( Dict.update gameId (\mg -> mg |> Maybe.map (\g -> { g | winner = Just O })) games
-                            , Just ( gameId, game )
-                            )
+handleGameAbandon : Id GameId -> SessionId -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
+handleGameAbandon gameId sessionId model =
+    case Dict.get gameId model.activeGames of
+        Nothing ->
+            ( model, Command.none )
 
-                        else if game.playerO == sessionId then
-                            ( Dict.update gameId (\mg -> mg |> Maybe.map (\g -> { g | winner = Just X })) games
-                            , Just ( gameId, game )
-                            )
+        Just game ->
+            if game.playerX /= sessionId && game.playerO /= sessionId then
+                ( model, Command.none )
+
+            else
+                let
+                    updatedGame =
+                        if game.playerX == sessionId then
+                            { game | winner = Just O }
 
                         else
-                            ( games, found )
-                    )
-                    ( model.activeGames, Nothing )
+                            { game | winner = Just X }
 
-        command =
-            case gameToUpdate of
-                Nothing ->
-                    Command.none
+                    command =
+                        if game.playerX == sessionId then
+                            Effect.Lamdera.sendToFrontends game.playerO (OpponentLeftToFrontend (toFrontendGame game.playerO updatedGame))
 
-                Just ( gameId, game ) ->
-                    if game.playerX == sessionId then
-                        Effect.Lamdera.sendToFrontends game.playerO (OpponentLeftToFrontend (toFrontendGame game.playerO game))
+                        else
+                            Effect.Lamdera.sendToFrontends game.playerX (OpponentLeftToFrontend (toFrontendGame game.playerX updatedGame))
+                in
+                ( { model
+                    | activeGames = Dict.remove gameId model.activeGames
+                    , finishedGames = Dict.insert gameId updatedGame model.finishedGames
+                  }
+                , command
+                )
 
-                    else
-                        Effect.Lamdera.sendToFrontends game.playerX (OpponentLeftToFrontend (toFrontendGame game.playerX game))
+
+disconnectFromGame : SessionId -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
+disconnectFromGame sessionId model =
+    let
+        maybeGameId =
+            Dict.toList model.activeGames
+                |> List.Extra.find (\( _, game ) -> game.playerX == sessionId || game.playerO == sessionId)
+                |> Maybe.map Tuple.first
     in
-    ( { model | activeGames = updatedGames }
-    , command
-    )
+    case maybeGameId of
+        Nothing ->
+            ( model, Command.none )
+
+        Just gameId ->
+            handleGameAbandon gameId sessionId model
 
 
 updateFromFrontend : SessionId -> ClientId -> ToBackend -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
@@ -237,8 +224,8 @@ updateFromFrontend sessionId clientId msg model =
         LeaveMatchmakingToBackend ->
             handleLeaveMatchmaking sessionId clientId model
 
-        AbandonGameToBackend ->
-            handleGameAbandon sessionId model
+        AbandonGameToBackend gameId ->
+            handleGameAbandon gameId sessionId model
 
         MakeMoveToBackend move ->
             handleMakeMove sessionId clientId move model
@@ -375,7 +362,7 @@ initialOnlineGame id firstPlayer secondPlayer =
     { id = id
     , playerX = firstPlayer
     , playerO = secondPlayer
-    , boards = List.repeat 9 { cells = List.repeat 9 Empty, winner = Nothing }
+    , boards = List.repeat 9 emptySmallBoard
     , currentPlayer = X
     , activeBoard = Nothing
     , winner = Nothing
@@ -516,7 +503,10 @@ handleMakeMove sessionId _ move model =
                         }
             in
             ( updatedModel
-            , Effect.Lamdera.sendToFrontends opponent (OpponentMoveToFrontend move)
+            , Command.batch
+                [ Effect.Lamdera.sendToFrontends opponent (SendGameToFrontend (toFrontendGame opponent updatedGame))
+                , Effect.Lamdera.sendToFrontends sessionId (SendGameToFrontend (toFrontendGame sessionId updatedGame))
+                ]
             )
 
         Nothing ->

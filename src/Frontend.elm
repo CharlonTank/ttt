@@ -180,7 +180,7 @@ update msg ({ localStorage } as model) =
                                                 ( { model | frontendGame = Just { updatedFrontendGame | botIsPlaying = True } }
                                                 , Command.batch
                                                     [ cmd
-                                                    , Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 0))
+                                                    , Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 50))
                                                     ]
                                                 )
                                            )
@@ -207,11 +207,11 @@ update msg ({ localStorage } as model) =
                 |> Maybe.withDefault ( model, Command.none )
 
         BotMove ->
-            case ( model.route |> Debug.log "route", model.frontendGame |> Debug.log "frontendGame" ) of
+            case ( model.route, model.frontendGame ) of
                 ( GameRoute (WithBot difficulty), Just game ) ->
                     let
                         botMove =
-                            Bot.findBestMove game difficulty |> Debug.log "botMove"
+                            Bot.findBestMove game difficulty
 
                         ( newFrontendGame, cmd ) =
                             case botMove of
@@ -282,7 +282,7 @@ update msg ({ localStorage } as model) =
             , Command.batch
                 [ Audio.playSound ButtonClickSound
                 , if botIsPlaying then
-                    Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 0))
+                    Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 50))
 
                   else
                     Command.none
@@ -308,25 +308,38 @@ update msg ({ localStorage } as model) =
             , Audio.playSound ButtonClickSound
             )
 
+        PlayForMeAgainstTheBotClicked ->
+            case ( model.route, model.frontendGame ) of
+                ( GameRoute (WithBot _), Just frontendGame ) ->
+                    ( { model | frontendGame = Just { frontendGame | botIsPlaying = True } }
+                    , Command.batch
+                        [ Effect.Task.perform (always PlayForMeAgainstTheBot) (Effect.Process.sleep (Duration.milliseconds 50))
+                        , Audio.playSound (MoveSound frontendGame.currentPlayer)
+                        ]
+                    )
+
+                _ ->
+                    ( model, Command.none )
+
         PlayForMeAgainstTheBot ->
             case ( model.route, model.frontendGame ) of
                 ( GameRoute (WithBot _), Just frontendGame ) ->
                     let
                         ( newModel, cmd ) =
-                            case Bot.findBestMove frontendGame Elite |> Debug.log "botMove" of
+                            case Bot.findBestMove frontendGame Elite of
                                 Just move ->
                                     let
                                         ( newFrontendGame, moveCmd ) =
-                                            handlePlayerMove frontendGame model (WithBot Elite) move |> Debug.log "botMove2"
+                                            handlePlayerMove frontendGame model (WithBot Elite) move
 
                                         botIsPlaying =
-                                            (newFrontendGame.gameResult == Nothing) |> Debug.log "botIsPlaying"
+                                            newFrontendGame.gameResult == Nothing
                                     in
                                     ( { model | frontendGame = Just { newFrontendGame | botIsPlaying = botIsPlaying } }
                                     , if botIsPlaying then
                                         Command.batch
                                             [ moveCmd
-                                            , Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 0))
+                                            , Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 50))
                                             ]
 
                                       else
@@ -334,7 +347,7 @@ update msg ({ localStorage } as model) =
                                     )
 
                                 Nothing ->
-                                    ( model |> Debug.log "!!!!!!!!!", Command.none )
+                                    ( model, Command.none )
                     in
                     ( newModel, cmd )
 
@@ -371,8 +384,7 @@ update msg ({ localStorage } as model) =
                         if frontendGame.currentMoveIndex >= 0 then
                             let
                                 newIndex =
-                                    (frontendGame.currentMoveIndex - 1)
-                                        |> Debug.log "newIndex"
+                                    frontendGame.currentMoveIndex - 1
 
                                 newFrontendGame =
                                     reconstructBoardFromMoves frontendGame.moveHistory newIndex frontendGame
@@ -543,7 +555,12 @@ update msg ({ localStorage } as model) =
                 , frontendGame = Just { frontendGame | gameResult = Just Lost }
               }
             , Command.batch
-                [ Effect.Lamdera.sendToBackend AbandonGameToBackend
+                [ case frontendGame.id of
+                    Just gameId ->
+                        Effect.Lamdera.sendToBackend (AbandonGameToBackend gameId)
+
+                    Nothing ->
+                        Command.none
                 , Audio.playSound LoseSound
                 ]
             )
@@ -613,7 +630,8 @@ update msg ({ localStorage } as model) =
 
 initialFrontendGame : Maybe Player -> Opponent -> Bool -> FrontendGame
 initialFrontendGame self opponent botIsPlaying =
-    { self = self
+    { id = Nothing
+    , self = self
     , boards = List.repeat 9 emptySmallBoard
     , currentPlayer = X
     , activeBoard = Nothing
@@ -633,70 +651,6 @@ updateFromBackend msg model =
         NoOpToFrontend ->
             ( model, Command.none )
 
-        GameFoundToFrontend { opponentId, playerRole } ->
-            ( { model
-                | route = GameRoute OnlineGameMode
-                , frontendGame = Just (initialFrontendGame (Just playerRole) (OnlineOpponent opponentId) False)
-                , inMatchmaking = False
-              }
-            , Audio.playSound ButtonClickSound
-            )
-
-        OpponentMoveToFrontend move ->
-            model.frontendGame
-                |> Maybe.map
-                    (\frontendGame ->
-                        let
-                            newFrontendGame =
-                                makeMove
-                                    (reconstructBoardFromMoves frontendGame.moveHistory (List.length frontendGame.moveHistory) frontendGame)
-                                    move
-                                    frontendGame.currentPlayer
-
-                            soundCommand =
-                                let
-                                    oldSmallBoard =
-                                        List.getAt move.boardIndex newFrontendGame.boards
-                                            |> Maybe.withDefault GameLogic.emptySmallBoard
-
-                                    newSmallBoard =
-                                        List.getAt move.boardIndex newFrontendGame.boards
-                                            |> Maybe.withDefault GameLogic.emptySmallBoard
-                                in
-                                if newSmallBoard.winner /= Nothing && oldSmallBoard.winner == Nothing then
-                                    Audio.playSound SmallWinSound
-
-                                else
-                                    Audio.playSound (MoveSound frontendGame.currentPlayer)
-                        in
-                        ( { model
-                            | frontendGame =
-                                Just
-                                    { newFrontendGame
-                                        | gameResult =
-                                            case newFrontendGame.winner of
-                                                Just winner ->
-                                                    if frontendGame.self == Just winner then
-                                                        Just Won
-
-                                                    else
-                                                        Just Lost
-
-                                                Nothing ->
-                                                    if isBigBoardComplete newFrontendGame.boards then
-                                                        Just Draw
-
-                                                    else
-                                                        Nothing
-                                        , currentMoveIndex = List.length newFrontendGame.moveHistory
-                                        , moveHistory = newFrontendGame.moveHistory ++ [ move ]
-                                    }
-                          }
-                        , soundCommand
-                        )
-                    )
-                |> Maybe.withDefault ( model, Command.none )
-
         OpponentLeftToFrontend frontendGame ->
             ( { model
                 | frontendGame = Just { frontendGame | gameResult = Just Won }
@@ -711,6 +665,9 @@ updateFromBackend msg model =
 
         SendGameToFrontend frontendGame ->
             ( { model | frontendGame = Just frontendGame, route = GameRoute OnlineGameMode, inMatchmaking = False }, Command.none )
+
+        AlreadyInMatchmakingToFrontend ->
+            ( { model | inMatchmaking = True }, Command.none )
 
 
 
@@ -746,12 +703,7 @@ isValidMove frontendGame move =
         Just sb ->
             let
                 canPlayInMiniBoard =
-                    case frontendGame.activeBoard of
-                        Nothing ->
-                            True
-
-                        Just activeBoardIndex ->
-                            move.boardIndex == activeBoardIndex
+                    GameLogic.isSmallBoardActive frontendGame.activeBoard move.boardIndex sb
 
                 isCellEmpty =
                     case List.getAt move.cellIndex sb.cells of
@@ -760,11 +712,8 @@ isValidMove frontendGame move =
 
                         Nothing ->
                             False
-
-                isSmallBoardAvailable =
-                    sb.winner == Nothing && not (List.all (\cell -> cell /= Empty) sb.cells)
             in
-            canPlayInMiniBoard && isCellEmpty && isSmallBoardAvailable
+            canPlayInMiniBoard && isCellEmpty
 
         Nothing ->
             False
@@ -1163,13 +1112,17 @@ viewGame ({ t, c } as userConfig) model frontendGame mode =
             ]
             [ case mode of
                 WithBot _ ->
+                    let
+                        canIPlay =
+                            frontendGame.self == Just frontendGame.currentPlayer && frontendGame.winner == Nothing && not frontendGame.botIsPlaying
+                    in
                     div []
                         [ button
                             [ style "padding" "12px"
                             , style "font-size" "0.8em"
                             , style "font-family" "inherit"
                             , style "background-color"
-                                (if frontendGame.self == Just frontendGame.currentPlayer && frontendGame.winner == Nothing && not frontendGame.botIsPlaying then
+                                (if canIPlay then
                                     Color.primary
 
                                  else
@@ -1179,7 +1132,7 @@ viewGame ({ t, c } as userConfig) model frontendGame mode =
                             , style "border" "none"
                             , style "border-radius" "10px"
                             , style "cursor"
-                                (if frontendGame.self == Just frontendGame.currentPlayer && frontendGame.winner == Nothing && not frontendGame.botIsPlaying then
+                                (if canIPlay then
                                     "pointer"
 
                                  else
@@ -1188,7 +1141,13 @@ viewGame ({ t, c } as userConfig) model frontendGame mode =
                             , style "transition" "all 0.2s ease"
                             , style "margin-bottom" "10px"
                             , style "width" "100%"
-                            , onClick PlayForMeAgainstTheBot
+                            , onClick
+                                (if canIPlay then
+                                    PlayForMeAgainstTheBotClicked
+
+                                 else
+                                    NoOp
+                                )
                             ]
                             [ text t.playForMe ]
                         , if model.showAbandonConfirm then
@@ -1816,12 +1775,7 @@ viewSmallBoard : UserConfig -> FrontendGame -> Int -> SmallBoard -> Html Fronten
 viewSmallBoard ({ t, c } as userConfig) frontendGame boardIndex smallBoardData =
     let
         isActive =
-            case frontendGame.activeBoard of
-                Nothing ->
-                    True
-
-                Just activeBoardIndex ->
-                    boardIndex == activeBoardIndex
+            GameLogic.isSmallBoardActive frontendGame.activeBoard boardIndex smallBoardData
 
         isBotTurn =
             frontendGame.botIsPlaying

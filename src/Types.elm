@@ -5,7 +5,7 @@ import Effect.Browser.Navigation exposing (Key)
 import Effect.Lamdera exposing (ClientId, SessionId)
 import Effect.Time
 import I18n exposing (Language(..), Translation, languageToString)
-import Id exposing (GameId(..), Id(..))
+import Id exposing (GameId(..), Id(..), UserId)
 import Lamdera.Json as Json
 import LocalStorage exposing (LocalStorage)
 import Random
@@ -114,7 +114,8 @@ type Opponent
 
 
 type alias FrontendGame =
-    { opponent : Opponent
+    { id : Maybe (Id GameId)
+    , opponent : Opponent
     , boards : List SmallBoard
     , currentPlayer : Player
     , self : Maybe Player
@@ -128,16 +129,8 @@ type alias FrontendGame =
     }
 
 
-type alias SessionRecord =
-    { clientIds : List ClientId
-    , activity : Activity
-    }
-
-
-type Activity
-    = InQueue
-    | InGame (Id GameId)
-    | Available
+type alias User =
+    { id : Id UserId }
 
 
 type alias BackendModel =
@@ -145,7 +138,7 @@ type alias BackendModel =
     , activeGames : SeqDict (Id GameId) OnlineGame
     , finishedGames : SeqDict (Id GameId) OnlineGame
     , seed : Random.Seed
-    , sessions : SeqDict SessionId SessionRecord
+    , sessions : SeqDict SessionId (List ClientId)
     }
 
 
@@ -162,6 +155,7 @@ type FrontendMsg
     | StartBotGame BotDifficulty FirstPlayer
     | ReturnToMenu
     | CancelBotDifficulty
+    | PlayForMeAgainstTheBotClicked
     | PlayForMeAgainstTheBot
     | ChangeLanguage Language
     | CloseDebugger
@@ -215,7 +209,7 @@ type ToBackend
     | JoinMatchmakingToBackend
     | LeaveMatchmakingToBackend
     | MakeMoveToBackend Move
-    | AbandonGameToBackend
+    | AbandonGameToBackend (Id GameId)
 
 
 type BackendMsg
@@ -226,11 +220,10 @@ type BackendMsg
 
 type ToFrontend
     = NoOpToFrontend
-    | GameFoundToFrontend { opponentId : SessionId, playerRole : Player }
-    | OpponentMoveToFrontend Move
     | OpponentLeftToFrontend FrontendGame
     | BackendModelReceivedToFrontend BackendModel
     | SendGameToFrontend FrontendGame
+    | AlreadyInMatchmakingToFrontend
 
 
 

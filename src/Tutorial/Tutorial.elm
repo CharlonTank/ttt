@@ -28,7 +28,8 @@ getTutorialBoard step =
                         )
                         (List.repeat 9 emptySmallBoard)
             in
-            { boards = boards
+            { id = Nothing
+            , boards = boards
             , self = Just X
             , currentPlayer = X
             , activeBoard = Just 4
@@ -69,7 +70,8 @@ getTutorialBoard step =
                         )
                         (List.repeat 9 emptySmallBoard)
             in
-            { boards = boards
+            { id = Nothing
+            , boards = boards
             , currentPlayer = X
             , self = Just X
             , activeBoard = Just 2
@@ -146,7 +148,8 @@ getTutorialBoard step =
                         )
                         (List.repeat 9 emptySmallBoard)
             in
-            { boards = boards
+            { id = Nothing
+            , boards = boards
             , self = Just X
             , currentPlayer = X
             , activeBoard = Just 4
@@ -223,7 +226,8 @@ getTutorialBoard step =
                         )
                         (List.repeat 9 emptySmallBoard)
             in
-            { boards = boards
+            { id = Nothing
+            , boards = boards
             , self = Just O
             , currentPlayer = O
             , activeBoard = Nothing
@@ -354,7 +358,8 @@ getTutorialBoard step =
                         )
                         (List.repeat 9 emptySmallBoard)
             in
-            { boards = boards
+            { id = Nothing
+            , boards = boards
             , self = Just X
             , currentPlayer = X
             , activeBoard = Just 8 -- Force play in bottom-right board
@@ -485,7 +490,8 @@ getTutorialBoard step =
                         )
                         (List.repeat 9 emptySmallBoard)
             in
-            { boards = boards
+            { id = Nothing
+            , boards = boards
             , self = Just X
             , currentPlayer = X
             , activeBoard = Nothing
