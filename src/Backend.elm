@@ -5,10 +5,10 @@ import Effect.Lamdera exposing (ClientId, SessionId, broadcast, sendToFrontends)
 import Effect.Subscription as Subscription exposing (Subscription)
 import Effect.Task
 import Effect.Time
+import GameLogic exposing (checkBigBoardWinner, checkSmallBoardWinner, isBigBoardComplete)
 import Id exposing (GameId(..), Id(..))
 import Lamdera
 import List.Extra
-import GameLogic exposing (checkSmallBoardWinner, checkBigBoardWinner, isBigBoardComplete)
 import Random
 import SeqDict as Dict exposing (SeqDict)
 import Types exposing (..)
@@ -208,7 +208,6 @@ handleGameAbandon sessionId model =
                     )
                     ( model.activeGames, Nothing )
 
-
         command =
             case gameToUpdate of
                 Nothing ->
@@ -217,10 +216,11 @@ handleGameAbandon sessionId model =
                 Just ( gameId, game ) ->
                     if game.playerX == sessionId then
                         Effect.Lamdera.sendToFrontends game.playerO (OpponentLeftToFrontend (toFrontendGame game.playerO game))
+
                     else
                         Effect.Lamdera.sendToFrontends game.playerX (OpponentLeftToFrontend (toFrontendGame game.playerX game))
     in
-        ( { model | activeGames = updatedGames }
+    ( { model | activeGames = updatedGames }
     , command
     )
 
@@ -385,6 +385,7 @@ initialOnlineGame id firstPlayer secondPlayer =
     }
 
 
+
 -- initialFrontendGameOneStepFromDraw : Id GameId -> SessionId -> SessionId -> OnlineGame
 -- initialFrontendGameOneStepFromDraw id firstPlayer secondPlayer =
 --     { id = id
@@ -440,7 +441,6 @@ handleLeaveMatchmaking sessionId _ model =
     )
 
 
-
 handleMakeMove : SessionId -> ClientId -> Move -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
 handleMakeMove sessionId _ move model =
     let
@@ -459,38 +459,49 @@ handleMakeMove sessionId _ move model =
                     else
                         game.playerX
 
+                updatedBoards =
+                    List.indexedMap
+                        (\i board ->
+                            if i == move.boardIndex then
+                                let
+                                    updatedCells =
+                                        List.indexedMap
+                                            (\j cell ->
+                                                if j == move.cellIndex then
+                                                    Filled game.currentPlayer
+
+                                                else
+                                                    cell
+                                            )
+                                            board.cells
+                                in
+                                { board
+                                    | cells = updatedCells
+                                    , winner = checkSmallBoardWinner updatedCells
+                                }
+
+                            else
+                                board
+                        )
+                        game.boards
+
                 updatedGame =
                     { game
-                        | boards = List.indexedMap
-                            (\i board ->
-                                if i == move.boardIndex then
-                                    let
-                                        updatedCells =
-                                            List.indexedMap
-                                                (\j cell ->
-                                                    if j == move.cellIndex then
-                                                        Filled game.currentPlayer
-                                                    else
-                                                        cell
-                                                )
-                                                board.cells
-                                    in
-                                    { board
-                                        | cells = updatedCells
-                                        , winner = checkSmallBoardWinner updatedCells
-                                    }
-                                else
-                                    board
-                            )
-                            game.boards
-                        , currentPlayer = if game.currentPlayer == X then O else X
+                        | boards = updatedBoards
+                        , currentPlayer =
+                            if game.currentPlayer == X then
+                                O
+
+                            else
+                                X
                         , lastMove = Just move
                         , moveHistory = game.moveHistory ++ [ move ]
                         , currentMoveIndex = List.length game.moveHistory
+                        , winner = checkBigBoardWinner updatedBoards
                     }
 
                 isGameFinished =
-                    checkBigBoardWinner updatedGame.boards /= Nothing || isBigBoardComplete updatedGame.boards
+                    checkBigBoardWinner updatedBoards /= Nothing || isBigBoardComplete updatedBoards
 
                 updatedModel =
                     if isGameFinished then
@@ -498,6 +509,7 @@ handleMakeMove sessionId _ move model =
                             | activeGames = Dict.remove gameId model.activeGames
                             , finishedGames = Dict.insert gameId updatedGame model.finishedGames
                         }
+
                     else
                         { model
                             | activeGames = Dict.insert gameId updatedGame model.activeGames

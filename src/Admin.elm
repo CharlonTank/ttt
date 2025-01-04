@@ -91,14 +91,12 @@ viewStyles =
             .admin-table code {
                 padding: 4px 8px;
             }
-            @media (max-width: 600px) {
+            @media (max-width: 700px) {
                 .admin-title { font-size: 20px !important; }
                 .admin-emoji { font-size: 24px !important; }
                 .admin-section-title { font-size: 18px !important; }
                 .admin-section-emoji { font-size: 18px !important; }
                 .admin-table { font-size: 12px !important; }
-                .admin-table td, .admin-table th { padding: 8px !important; }
-                .admin-container { padding: 10px !important; }
             }
         """ ]
 
@@ -132,7 +130,7 @@ viewHeader =
 
 viewSection : Theme -> Section -> Html FrontendMsg
 viewSection c section =
-    div 
+    div
         [ style "margin-bottom" "40px"
         , style "animation" "fadeIn 0.5s ease-out"
         ]
@@ -207,7 +205,7 @@ viewTable c config =
 viewTableHeader : Theme -> String -> Html msg
 viewTableHeader c text_ =
     th
-        [ style "padding" "18px"
+        [ style "padding" "18px 18px 18px 24px"
         , style "text-align" "left"
         , style "color" c.text
         , style "font-weight" "600"
@@ -261,7 +259,7 @@ viewMatchmakingQueue c queue =
 viewActiveGames : Theme -> SeqDict (Id GameId) OnlineGame -> Html FrontendMsg
 viewActiveGames c games =
     viewTable c
-        { headers = [ "Game ID", "P1", "P2" ]
+        { headers = [ "ID", "P1", "P2" ]
         , rows =
             Dict.toList games
                 |> List.map
@@ -278,7 +276,7 @@ viewActiveGames c games =
 viewFinishedGames : Theme -> SeqDict (Id GameId) OnlineGame -> Html FrontendMsg
 viewFinishedGames c games =
     viewTable c
-        { headers = [ "Game ID", "P1", "P2", "State" ]
+        { headers = [ "ID", "P1", "P2", "State" ]
         , rows =
             Dict.toList games
                 |> List.map
@@ -300,7 +298,7 @@ viewGameStatus game =
         , style "padding" "6px 16px"
         , style "border-radius" "20px"
         , style "font-size" "14px"
-        , style "background-color" (getStatusColor game.winner)
+        , style "background-color" Color.primary
         , style "color" "white"
         , style "font-weight" "500"
         , style "letter-spacing" "0.5px"
@@ -315,19 +313,6 @@ viewGameStatus game =
                     "Draw"
             )
         ]
-
-
-getStatusColor : Maybe Player -> String
-getStatusColor winner =
-    case winner of
-        Just X ->
-            Color.danger
-
-        Just O ->
-            Color.primary
-
-        Nothing ->
-            Color.success
 
 
 playerToString : Player -> String
