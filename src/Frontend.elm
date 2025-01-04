@@ -579,31 +579,31 @@ update msg ({ localStorage } as model) =
             case model.tutorialState of
                 Just tutorialState ->
                     let
-                        nextStep =
+                        ( nextStep, soundCommand ) =
                             case tutorialState of
                                 TutorialStep1 ->
-                                    Just TutorialStep2
+                                    ( Just TutorialStep2, Audio.playSound (MoveSound X) )
 
                                 TutorialStep2 ->
-                                    Just TutorialStep3
+                                    ( Just TutorialStep3, Audio.playSound ButtonClickSound )
 
                                 TutorialStep3 ->
-                                    Just TutorialStep4
+                                    ( Just TutorialStep4, Command.batch [ Audio.playSound (MoveSound X), Audio.playSound SmallWinSound ] )
 
                                 TutorialStep4 ->
-                                    Just TutorialStep5
+                                    ( Just TutorialStep5, Audio.playSound ButtonClickSound )
 
                                 TutorialStep5 ->
-                                    Just TutorialStep6
+                                    ( Just TutorialStep6, Command.batch [ Audio.playSound (MoveSound X), Audio.playSound WinSound ] )
 
                                 TutorialStep6 ->
-                                    Nothing
+                                    ( Nothing, Audio.playSound ButtonClickSound )
                     in
                     ( { model
                         | tutorialState = nextStep
                         , frontendGame = Maybe.map getTutorialBoard nextStep
                       }
-                    , Audio.playSound ButtonClickSound
+                    , soundCommand
                     )
 
                 _ ->
@@ -898,6 +898,7 @@ view model =
                 , style "transition" "opacity 0.3s ease-in"
                 ]
                 ([ viewLanguageSelector userConfig model
+                 , viewSoundButton userConfig model
                  , case ( model.route, model.frontendGame, model.tutorialState ) of
                     ( HomeRoute, _, _ ) ->
                         viewHome userConfig model

@@ -3,11 +3,11 @@ exports.init = async function (app) {
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const audioBuffers = {};
     const volumes = {
-        'win': 0.5,
-        'small-win': 0.5,
-        'error': 0.5,
-        'lose': 0.5,
-        'default': 0.5,
+        'win': 0.2,
+        'small-win': 0.2,
+        'error': 0.2,
+        'lose': 0.2,
+        'default': 0.2,
         'button-click': 0.2,
         'move-x': 0.2,
         'move-o': 0.2,
