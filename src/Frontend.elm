@@ -17,6 +17,7 @@ import Effect.Process
 import Effect.Subscription as Subscription exposing (Subscription)
 import Effect.Task
 import Effect.Time
+import Email
 import GameLogic
     exposing
         ( checkBigBoardWinner
@@ -30,7 +31,7 @@ import GameLogic
         )
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onClick)
+import Html.Events exposing (onClick, onInput)
 import I18n exposing (Language(..), Translation, languageToString, stringToLanguage, translations)
 import Json.Decode as D
 import Json.Encode as E
@@ -48,8 +49,7 @@ import Palette.Utils as Utils
 import Random
 import Random.Extra
 import String
-import Svg exposing (Svg, circle, line, svg)
-import Svg.Attributes
+import SvgIcons
 import Theme exposing (..)
 import Tutorial.Tutorial exposing (getTutorialBoard, isTutorialMoveValid)
 import Tutorial.Types exposing (TutorialStep(..))
@@ -84,6 +84,7 @@ init url key =
             , route = route
             , localStorage = LocalStorage.default
             , seed = Nothing
+            , login = NotLoggedIn
             , rulesModalVisible = False
             , frClickCount = 0
             , debuggerVisible = False
@@ -100,6 +101,9 @@ init url key =
             , isLoading = True
             , backendModel = Nothing
             , frontendGame = Nothing
+            , isPasswordVisible = False
+            , loginEmail = ""
+            , loginPassword = ""
             }
 
         route =
@@ -180,7 +184,7 @@ update msg ({ localStorage } as model) =
                                                 ( { model | frontendGame = Just { updatedFrontendGame | botIsPlaying = True } }
                                                 , Command.batch
                                                     [ cmd
-                                                    , Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 50))
+                                                    , Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 100))
                                                     ]
                                                 )
                                            )
@@ -282,7 +286,7 @@ update msg ({ localStorage } as model) =
             , Command.batch
                 [ Audio.playSound ButtonClickSound
                 , if botIsPlaying then
-                    Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 50))
+                    Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 100))
 
                   else
                     Command.none
@@ -313,7 +317,7 @@ update msg ({ localStorage } as model) =
                 ( GameRoute (WithBot _), Just frontendGame ) ->
                     ( { model | frontendGame = Just { frontendGame | botIsPlaying = True } }
                     , Command.batch
-                        [ Effect.Task.perform (always PlayForMeAgainstTheBot) (Effect.Process.sleep (Duration.milliseconds 50))
+                        [ Effect.Task.perform (always PlayForMeAgainstTheBot) (Effect.Process.sleep (Duration.milliseconds 100))
                         , Audio.playSound (MoveSound frontendGame.currentPlayer)
                         ]
                     )
@@ -339,7 +343,7 @@ update msg ({ localStorage } as model) =
                                     , if botIsPlaying then
                                         Command.batch
                                             [ moveCmd
-                                            , Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 50))
+                                            , Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 100))
                                             ]
 
                                       else
@@ -627,6 +631,43 @@ update msg ({ localStorage } as model) =
         KeyRight ->
             update RedoMove model
 
+        NavigateToLogin ->
+            ( { model | route = LoginRoute }
+            , Command.none
+            )
+
+        TogglePasswordVisibility ->
+            ( { model | isPasswordVisible = not model.isPasswordVisible }
+            , Command.none
+            )
+
+        LoginOrSignUpClicked ->
+            case Email.fromString model.loginEmail of
+                Just _ ->
+                    ( { model | login = WaitingForAnswer }
+                    , Effect.Lamdera.sendToBackend (LoginOrSignUpToBackend model.loginEmail model.loginPassword)
+                    )
+
+                Nothing ->
+                    ( { model | login = LoginError InvalidEmailError }
+                    , Command.none
+                    )
+
+        UpdateLoginEmail email ->
+            ( { model | loginEmail = email }
+            , Command.none
+            )
+
+        UpdateLoginPassword password ->
+            ( { model | loginPassword = password }
+            , Command.none
+            )
+
+        LogOut ->
+            ( { model | login = NotLoggedIn }
+            , Effect.Lamdera.sendToBackend LogOutToBackend
+            )
+
 
 initialFrontendGame : Maybe Player -> Opponent -> Bool -> FrontendGame
 initialFrontendGame self opponent botIsPlaying =
@@ -654,8 +695,6 @@ updateFromBackend msg model =
         OpponentLeftToFrontend frontendGame ->
             ( { model
                 | frontendGame = Just { frontendGame | gameResult = Just Won }
-
-                -- TODO: handle this to display a message to the user --FIXME
               }
             , Audio.playSound WinSound
             )
@@ -669,54 +708,46 @@ updateFromBackend msg model =
         AlreadyInMatchmakingToFrontend ->
             ( { model | inMatchmaking = True }, Command.none )
 
+        SendUserToFrontend maybeUser ->
+            case maybeUser of
+                Just user ->
+                    ( { model | login = Registered user }, Command.none )
 
+                Nothing ->
+                    ( { model | login = NotLoggedIn }, Command.none )
 
---  canPlayInMiniBoard =
---             case frontendGame.activeBoard of
---                 Nothing ->
---                     True
---                 Just activeBoardIndex ->
---                     boardIndex == activeBoardIndex
---         smallBoard =
---             List.getAt boardIndex frontendGame.boards
---         isCellEmpty =
---             case smallBoard of
---                 Just sb ->
---                     case List.getAt cellIndex sb.cells of
---                         Just cell ->
---                             cell == Empty
---                         Nothing ->
---                             False
---                 Nothing ->
---                     False
---         isSmallBoardAvailable =
---             case smallBoard of
---                 Just sb ->
---                     sb.winner == Nothing && not (List.all (\cell -> cell /= Empty) sb.cells)
---                 Nothing ->
---                     False
+        SignUpDone user ->
+            ( { model | login = Registered user, route = HomeRoute }
+            , Command.none
+            )
+
+        SignInDone user ->
+            ( { model | login = Registered user, route = HomeRoute }
+            , Command.none
+            )
+
+        WrongPassword error ->
+            ( { model | login = LoginError error }
+            , Command.none
+            )
 
 
 isValidMove : FrontendGame -> Move -> Bool
 isValidMove frontendGame move =
-    case List.getAt move.boardIndex frontendGame.boards of
-        Just sb ->
-            let
-                canPlayInMiniBoard =
-                    GameLogic.isSmallBoardActive frontendGame.activeBoard move.boardIndex sb
+    frontendGame.boards
+        |> List.getAt move.boardIndex
+        |> Maybe.map
+            (\sb ->
+                GameLogic.isSmallBoardActive frontendGame.activeBoard move.boardIndex sb
+                    && (case List.getAt move.cellIndex sb.cells of
+                            Just cell ->
+                                cell == Empty
 
-                isCellEmpty =
-                    case List.getAt move.cellIndex sb.cells of
-                        Just cell ->
-                            cell == Empty
-
-                        Nothing ->
-                            False
-            in
-            canPlayInMiniBoard && isCellEmpty
-
-        Nothing ->
-            False
+                            Nothing ->
+                                False
+                       )
+            )
+        |> Maybe.withDefault False
 
 
 handlePlayerMove : FrontendGame -> FrontendModel -> GameMode -> Move -> ( FrontendGame, Command FrontendOnly ToBackend FrontendMsg )
@@ -912,6 +943,9 @@ view model =
                     ( AdminRoute, _, _ ) ->
                         Admin.view userConfig model.backendModel
 
+                    ( LoginRoute, _, _ ) ->
+                        viewLogin userConfig model
+
                     _ ->
                         text "SHOULD NOT HAPPEN"
                  ]
@@ -949,10 +983,10 @@ viewGameButton : UserConfig -> HtmlId -> String -> FrontendMsg -> Html FrontendM
 viewGameButton userConfig htmlId label msg =
     button
         (Button.secondary userConfig
-            ++ Utils.margin10
-            ++ Utils.fullWidth
-            ++ Utils.maxWidth 300
-            ++ [ onClick msg
+            ++ [ style "margin" "10px"
+               , style "width" "100%"
+               , style "max-width" "300px"
+               , onClick msg
                , Dom.idToAttribute htmlId
                ]
         )
@@ -972,10 +1006,12 @@ playOnlineButton ({ t } as userConfig) model =
                     else
                         []
                    )
-                ++ Utils.margin10
-                ++ Utils.fullWidth
-                ++ Utils.maxWidth 300
-                ++ [ onClick
+                ++ [ style "margin" "10px"
+                   , style "width" "100%"
+                   , style "max-width" "300px"
+                   , style "font-size" "1.2em"
+                   , style "padding" "15px"
+                   , onClick
                         (if model.inMatchmaking then
                             LeaveMatchmaking
 
@@ -1000,7 +1036,11 @@ playOnlineButton ({ t } as userConfig) model =
                     ]
 
               else
-                text t.playOnline
+                div
+                    Layout.flexCenterWithGap
+                    [ SvgIcons.play "white"
+                    , text t.playOnline
+                    ]
             ]
         ]
 
@@ -1020,12 +1060,31 @@ viewHome ({ t, c } as userConfig) model =
 
           else
             div []
-                [ T.h1 c t.welcome
+                [ case model.login of
+                    Registered user ->
+                        div
+                            [ style "font-size" "0.8em"
+                            , style "margin-bottom" "10px"
+                            , style "opacity" "0.8"
+                            ]
+                            [ text t.loggedInAs
+                            , text user.email
+                            ]
+
+                    _ ->
+                        text ""
+                , T.h1 c t.welcome
                 , T.text c t.description
                 , playOnlineButton userConfig model
                 , viewGameButton userConfig (Dom.id "gameWithBot") t.playWithBot StartGameWithBot
                 , viewGameButton userConfig (Dom.id "toggleRules") t.rulesTitle ToggleRulesModal
                 , viewGameButton userConfig (Dom.id "gameWithFriend") t.playWithFriend StartGameWithFriend
+                , case model.login of
+                    Registered _ ->
+                        viewGameButton userConfig (Dom.id "logout") t.logoutButton LogOut
+
+                    _ ->
+                        viewGameButton userConfig (Dom.id "login") t.loginTitle NavigateToLogin
                 ]
         , if model.rulesModalVisible then
             viewRulesModal userConfig model
@@ -1862,59 +1921,13 @@ viewCell ({ t, c } as userConfig) frontendGame boardIndex isClickable cellStyles
 
                 Filled X ->
                     ( div [ style "width" "100%", style "height" "100%", style "position" "relative" ]
-                        [ svg
-                            [ Svg.Attributes.viewBox "0 0 100 100"
-                            , Svg.Attributes.width "100%"
-                            , Svg.Attributes.height "100%"
-                            , Svg.Attributes.fill "none"
-                            , Svg.Attributes.stroke Color.danger
-                            , Svg.Attributes.strokeWidth "10"
-                            , Svg.Attributes.strokeLinecap "round"
-                            , style "position" "absolute"
-                            , style "top" "0"
-                            , style "left" "0"
-                            ]
-                            [ line
-                                [ Svg.Attributes.x1 "20"
-                                , Svg.Attributes.y1 "20"
-                                , Svg.Attributes.x2 "80"
-                                , Svg.Attributes.y2 "80"
-                                ]
-                                []
-                            , line
-                                [ Svg.Attributes.x1 "80"
-                                , Svg.Attributes.y1 "20"
-                                , Svg.Attributes.x2 "20"
-                                , Svg.Attributes.y2 "80"
-                                ]
-                                []
-                            ]
-                        ]
+                        [ SvgIcons.x Color.danger ]
                     , Color.danger
                     )
 
                 Filled O ->
                     ( div [ style "width" "100%", style "height" "100%", style "position" "relative" ]
-                        [ svg
-                            [ Svg.Attributes.viewBox "0 0 100 100"
-                            , Svg.Attributes.width "100%"
-                            , Svg.Attributes.height "100%"
-                            , Svg.Attributes.fill "none"
-                            , Svg.Attributes.stroke Color.primary
-                            , Svg.Attributes.strokeWidth "10"
-                            , Svg.Attributes.strokeLinecap "round"
-                            , style "position" "absolute"
-                            , style "top" "0"
-                            , style "left" "0"
-                            ]
-                            [ circle
-                                [ Svg.Attributes.cx "50"
-                                , Svg.Attributes.cy "50"
-                                , Svg.Attributes.r "35"
-                                ]
-                                []
-                            ]
-                        ]
+                        [ SvgIcons.o Color.primary ]
                     , Color.primary
                     )
 
@@ -2176,3 +2189,151 @@ isDark preference systemMode =
 
         SystemMode ->
             systemMode == Dark
+
+
+viewLogin : UserConfig -> FrontendModel -> Html FrontendMsg
+viewLogin ({ t, c } as userConfig) model =
+    div
+        (Container.card c
+            ++ [ style "text-align" "center"
+               , style "max-width" "400px"
+               , style "width" "90%"
+               , style "color" c.text
+               ]
+        )
+        [ T.h1 c t.loginTitle
+        , div
+            [ style "margin-bottom" "20px"
+            , style "font-size" "0.8em"
+            ]
+            [ case model.login of
+                LoginError error ->
+                    div
+                        [ style "color" Color.danger ]
+                        [ text <|
+                            case error of
+                                WrongPasswordError ->
+                                    t.wrongPassword
+
+                                PasswordTooShortError ->
+                                    t.passwordTooShort
+
+                                InvalidEmailError ->
+                                    t.invalidEmail
+                        ]
+
+                _ ->
+                    text ""
+            ]
+        , div
+            [ style "display" "flex"
+            , style "flex-direction" "column"
+            , style "gap" "20px"
+            , style "margin" "20px 0"
+            ]
+            [ div
+                [ style "display" "flex"
+                , style "flex-direction" "column"
+                , style "align-items" "flex-start"
+                , style "gap" "5px"
+                ]
+                [ label [ style "font-size" "0.8em" ] [ text t.emailLabel ]
+                , input
+                    [ type_ "email"
+                    , placeholder t.emailPlaceholder
+                    , value model.loginEmail
+                    , onInput UpdateLoginEmail
+                    , style "width" "100%"
+                    , style "padding" "10px"
+                    , style "border-radius" "5px"
+                    , style "border" ("1px solid " ++ c.border)
+                    , style "background-color" c.background
+                    , style "color" c.text
+                    , style "font-family" "inherit"
+                    ]
+                    []
+                ]
+            , div
+                [ style "display" "flex"
+                , style "flex-direction" "column"
+                , style "align-items" "flex-start"
+                , style "gap" "5px"
+                ]
+                [ label [ style "font-size" "0.8em" ] [ text t.passwordLabel ]
+                , div
+                    [ style "position" "relative"
+                    , style "width" "100%"
+                    ]
+                    [ input
+                        [ type_
+                            (if model.isPasswordVisible then
+                                "text"
+
+                             else
+                                "password"
+                            )
+                        , placeholder t.passwordPlaceholder
+                        , value model.loginPassword
+                        , onInput UpdateLoginPassword
+                        , style "width" "100%"
+                        , style "padding" "10px"
+                        , style "border-radius" "5px"
+                        , style "border" ("1px solid " ++ c.border)
+                        , style "background-color" c.background
+                        , style "color" c.text
+                        , style "font-family" "inherit"
+                        ]
+                        []
+                    , button
+                        [ style "position" "absolute"
+                        , style "right" "10px"
+                        , style "top" "50%"
+                        , style "transform" "translateY(-50%)"
+                        , style "background" "none"
+                        , style "border" "none"
+                        , style "cursor" "pointer"
+                        , style "color" c.text
+                        , style "font-size" "1.2em"
+                        , onClick TogglePasswordVisibility
+                        ]
+                        [ if model.isPasswordVisible then
+                            SvgIcons.eye c.text
+
+                          else
+                            SvgIcons.eyeClosed c.text
+                        ]
+                    ]
+                ]
+            ]
+        , case model.login of
+            WaitingForAnswer ->
+                div
+                    [ style "margin" "20px 0"
+                    , style "color" c.text
+                    ]
+                    [ text t.loggingIn ]
+
+            NotLoggedIn ->
+                button
+                    (Button.primary userConfig
+                        ++ [ onClick LoginOrSignUpClicked
+                           , style "margin" "20px 0"
+                           , style "width" "100%"
+                           ]
+                    )
+                    [ text t.loginOrSignUpButton ]
+
+            LoginError _ ->
+                button
+                    (Button.primary userConfig
+                        ++ [ onClick LoginOrSignUpClicked
+                           , style "margin" "20px 0"
+                           , style "width" "100%"
+                           ]
+                    )
+                    [ text t.loginOrSignUpButton ]
+
+            Registered _ ->
+                text ""
+        , viewGameButton userConfig (Dom.id "returnToMenu") t.backToMenu ReturnToMenu
+        ]

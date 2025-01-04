@@ -60,6 +60,10 @@ view { t, c } model =
                                   , emoji = "🏆"
                                   , content = viewFinishedGames c backendModel.finishedGames
                                   }
+                                , { title = "Users"
+                                  , emoji = "👥"
+                                  , content = viewUsers c backendModel.users
+                                  }
                                 ]
                             )
                         ]
@@ -67,7 +71,7 @@ view { t, c } model =
                 ]
 
         Nothing ->
-            text "SHOULD NOT HAPPEN"
+            div [] [ text "Loading..." ]
 
 
 viewStyles : Html msg
@@ -318,17 +322,17 @@ viewGameStatus game =
         ]
 
 
-viewSessions : Theme -> SeqDict SessionId (List ClientId) -> Html FrontendMsg
+viewSessions : Theme -> SeqDict SessionId Session -> Html FrontendMsg
 viewSessions c sessions =
     viewTable c
         { headers = [ "SessionID", "ClientIDs", "#Clients" ]
         , rows =
             Dict.toList sessions
                 |> List.map
-                    (\( sessionId, clients ) ->
+                    (\( sessionId, session ) ->
                         [ viewCode c (display4CharsFromSessionId sessionId)
                         , div []
-                            [ case List.take 2 clients of
+                            [ case List.take 2 session.clientIds of
                                 [] ->
                                     text "-"
 
@@ -340,14 +344,14 @@ viewSessions c sessions =
                                         [ viewCode c (display4CharsFromClientId clientId1)
                                         , text " "
                                         , viewCode c (display4CharsFromClientId clientId2)
-                                        , if List.length clients > 2 then
+                                        , if List.length session.clientIds > 2 then
                                             text " ..."
 
                                           else
                                             text ""
                                         ]
                             ]
-                        , text (String.fromInt (List.length clients))
+                        , text (String.fromInt (List.length session.clientIds))
                         ]
                     )
         , emptyMessage = "No active sessions"
@@ -362,3 +366,19 @@ playerToString player =
 
         O ->
             "O"
+
+
+viewUsers : Theme -> SeqDict Email User -> Html FrontendMsg
+viewUsers c users =
+    viewTable c
+        { headers = [ "Email", "Name" ]
+        , rows =
+            Dict.toList users
+                |> List.map
+                    (\( email, user ) ->
+                        [ text email
+                        , text user.name
+                        ]
+                    )
+        , emptyMessage = "No users registered yet"
+        }

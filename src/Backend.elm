@@ -1,5 +1,6 @@
 module Backend exposing (..)
 
+import Crypto.Hash as Hash
 import Effect.Command as Command exposing (BackendOnly, Command)
 import Effect.Lamdera exposing (ClientId, SessionId, broadcast, sendToFrontends)
 import Effect.Subscription as Subscription exposing (Subscription)
@@ -13,6 +14,18 @@ import Random
 import SeqDict as Dict exposing (SeqDict)
 import Types exposing (..)
 import UUID
+
+
+hashPassword : String -> String
+hashPassword password =
+    Hash.sha256 password
+
+
+toPublicUser : User -> PublicUser
+toPublicUser user =
+    { email = user.email
+    , name = user.name
+    }
 
 
 app =
@@ -45,6 +58,7 @@ init =
       , finishedGames = Dict.empty
       , seed = Random.initialSeed 89137219321
       , sessions = Dict.empty
+      , users = Dict.empty
       }
     , Command.none
     )
@@ -58,24 +72,33 @@ update msg model =
 
         ClientConnected sessionId clientId ->
             let
+                updatedSessions : SeqDict SessionId Session
                 updatedSessions =
-                    Dict.update sessionId
-                        (\mbClients ->
-                            case mbClients of
-                                Nothing ->
-                                    Just [ clientId ]
+                    model.sessions
+                        |> Dict.update sessionId
+                            (\mbSession ->
+                                case mbSession of
+                                    Nothing ->
+                                        Just { email = Nothing, clientIds = [ clientId ] }
 
-                                Just clients ->
-                                    Just (clientId :: clients)
-                        )
-                        model.sessions
+                                    Just session ->
+                                        Just { session | clientIds = clientId :: session.clientIds }
+                            )
+
+                maybeCurrentUser : Maybe PublicUser
+                maybeCurrentUser =
+                    model.sessions
+                        |> Dict.get sessionId
+                        |> Maybe.andThen
+                            (.email >> Maybe.andThen (\email -> Dict.get email model.users))
+                        |> Maybe.map toPublicUser
             in
-            if List.member sessionId model.matchmakingQueue then
-                ( { model | sessions = updatedSessions }
+            (if List.member sessionId model.matchmakingQueue then
+                ( model
                 , Effect.Lamdera.sendToFrontend clientId AlreadyInMatchmakingToFrontend
                 )
 
-            else
+             else
                 let
                     fGame =
                         model.activeGames
@@ -86,20 +109,31 @@ update msg model =
                 in
                 case fGame of
                     Just game ->
-                        ( { model | sessions = updatedSessions }
+                        ( model
                         , Effect.Lamdera.sendToFrontend clientId (SendGameToFrontend game)
                         )
 
                     Nothing ->
-                        ( { model | sessions = updatedSessions }
+                        ( model
                         , Command.none
                         )
+            )
+                |> (\( newModel, cmds ) ->
+                        ( { newModel | sessions = updatedSessions }
+                        , Command.batch
+                            [ cmds
+                            , Effect.Lamdera.sendToFrontend clientId (SendUserToFrontend maybeCurrentUser)
+                            ]
+                        )
+                   )
 
         ClientDisconnected sessionId clientId ->
             let
                 updatedSessions =
                     Dict.updateIfExists sessionId
-                        (List.filter ((/=) clientId))
+                        (\session ->
+                            { session | clientIds = List.filter ((/=) clientId) session.clientIds }
+                        )
                         model.sessions
 
                 isLastClient =
@@ -107,8 +141,8 @@ update msg model =
                         Nothing ->
                             True
 
-                        Just clients ->
-                            List.isEmpty clients
+                        Just session ->
+                            List.isEmpty session.clientIds
             in
             if isLastClient then
                 let
@@ -233,78 +267,117 @@ updateFromFrontend sessionId clientId msg model =
         RequestBackendModelToBackend ->
             ( model, Effect.Lamdera.sendToFrontends sessionId (BackendModelReceivedToFrontend model) )
 
+        LoginOrSignUpToBackend email password ->
+            case Dict.get email model.users of
+                Just user ->
+                    let
+                        hashedPassword =
+                            hashPassword password
+                    in
+                    if hashedPassword == user.password then
+                        let
+                            updatedSessions =
+                                Dict.update sessionId
+                                    (\maybeSession ->
+                                        Just
+                                            { email = Just email
+                                            , clientIds =
+                                                case maybeSession of
+                                                    Just session ->
+                                                        if List.member clientId session.clientIds then
+                                                            session.clientIds
 
+                                                        else
+                                                            clientId :: session.clientIds
 
--- ClientJoinedToBackend cId sId ->
---     let
---         updatedClientSessions =
---             Dict.update (Effect.Lamdera.sessionIdToString sId)
---                 (\mbClients ->
---                     case mbClients of
---                         Nothing ->
---                             Just [ Effect.Lamdera.clientIdToString cId ]
---                         Just clients ->
---                             Just (Effect.Lamdera.clientIdToString cId :: clients)
---                 )
---                 model.clientSessions
---         updatedClientToSession =
---             Dict.insert
---                 (Effect.Lamdera.clientIdToString cId)
---                 (Effect.Lamdera.sessionIdToString sId)
---                 model.clientToSession
---     in
---     ( { model
---       | clientSessions = updatedClientSessions
---       , clientToSession = updatedClientToSession
---       }
---     , Command.none
---     )
--- ClientDisconnected cId ->
---     let
---         clientIdStr = Effect.Lamdera.clientIdToString cId
---         maybeSessionId = Dict.get clientIdStr model.clientToSession
---         updatedClientToSession =
---             Dict.remove clientIdStr model.clientToSession
---         updatedClientSessions =
---             case maybeSessionId of
---                 Nothing ->
---                     model.clientSessions
---                 Just sessionIdStr ->
---                     Dict.update sessionIdStr
---                         (\mbClients ->
---                             case mbClients of
---                                 Nothing ->
---                                     Nothing
---                                 Just clients ->
---                                     let
---                                         remainingClients =
---                                             List.filter ((/=) clientIdStr) clients
---                                     in
---                                     if List.isEmpty remainingClients then
---                                         Nothing
---                                     else
---                                         Just remainingClients
---                         )
---                         model.clientSessions
---         command =
---             case maybeSessionId of
---                 Nothing ->
---                     Command.none
---                 Just sessionIdStr ->
---                     if not (Dict.member sessionIdStr updatedClientSessions) then
---                         -- All clients for this session are gone, schedule a check
---                         Effect.Process.sleep (Duration.seconds 5)
---                             |> Effect.Task.perform
---                                 (\_ -> CheckForAbandon (Effect.Lamdera.sessionIdFromString sessionIdStr))
---                     else
---                         Command.none
---     in
---     ( { model
---       | clientSessions = updatedClientSessions
---       , clientToSession = updatedClientToSession
---       }
---     , command
---     )
+                                                    Nothing ->
+                                                        [ clientId ]
+                                            }
+                                    )
+                                    model.sessions
+                        in
+                        ( { model | sessions = updatedSessions }
+                        , Effect.Lamdera.sendToFrontend clientId (SignInDone (toPublicUser user))
+                        )
+
+                    else
+                        ( model
+                        , Effect.Lamdera.sendToFrontend clientId (WrongPassword WrongPasswordError)
+                        )
+
+                Nothing ->
+                    if String.length password < 6 then
+                        ( model
+                        , Effect.Lamdera.sendToFrontend clientId (WrongPassword PasswordTooShortError)
+                        )
+
+                    else
+                        let
+                            hashedPassword =
+                                hashPassword password
+
+                            newUser =
+                                { email = email
+                                , name = "Player " ++ String.left 5 email
+                                , password = hashedPassword
+                                }
+
+                            updatedUsers =
+                                Dict.insert email newUser model.users
+
+                            updatedSessions =
+                                Dict.update sessionId
+                                    (\maybeSession ->
+                                        Just
+                                            { email = Just email
+                                            , clientIds =
+                                                case maybeSession of
+                                                    Just session ->
+                                                        if List.member clientId session.clientIds then
+                                                            session.clientIds
+
+                                                        else
+                                                            clientId :: session.clientIds
+
+                                                    Nothing ->
+                                                        [ clientId ]
+                                            }
+                                    )
+                                    model.sessions
+                        in
+                        ( { model
+                            | users = updatedUsers
+                            , sessions = updatedSessions
+                          }
+                        , Effect.Lamdera.sendToFrontend clientId (SignUpDone (toPublicUser newUser))
+                        )
+
+        LogOutToBackend ->
+            let
+                updatedSessions =
+                    Dict.update sessionId
+                        (\maybeSession ->
+                            case maybeSession of
+                                Just session ->
+                                    Just { session | email = Nothing }
+
+                                Nothing ->
+                                    Nothing
+                        )
+                        model.sessions
+
+                clientIds =
+                    Dict.get sessionId model.sessions
+                        |> Maybe.map .clientIds
+                        |> Maybe.withDefault []
+            in
+            ( { model | sessions = updatedSessions }
+            , Command.batch
+                (List.map
+                    (\targetClientId -> Effect.Lamdera.sendToFrontend targetClientId (SendUserToFrontend Nothing))
+                    clientIds
+                )
+            )
 
 
 handleJoinMatchmaking : SessionId -> ClientId -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )

@@ -55,6 +55,7 @@ type Route
     | GameRoute GameMode
     | AdminRoute
     | TutorialRoute
+    | LoginRoute
 
 
 type GameResult
@@ -63,11 +64,25 @@ type GameResult
     | Draw
 
 
+type LoginErrorWrapper
+    = WrongPasswordError
+    | PasswordTooShortError
+    | InvalidEmailError
+
+
+type LoginState
+    = NotLoggedIn
+    | WaitingForAnswer
+    | LoginError LoginErrorWrapper
+    | Registered PublicUser
+
+
 type alias FrontendModel =
     { key : Effect.Browser.Navigation.Key
     , route : Route
     , localStorage : LocalStorage
     , seed : Maybe Random.Seed
+    , login : LoginState
     , rulesModalVisible : Bool
     , frClickCount : Int
     , debuggerVisible : Bool
@@ -84,6 +99,9 @@ type alias FrontendModel =
     , isLoading : Bool
     , backendModel : Maybe BackendModel
     , frontendGame : Maybe FrontendGame
+    , isPasswordVisible : Bool
+    , loginEmail : String
+    , loginPassword : String
     }
 
 
@@ -130,7 +148,22 @@ type alias FrontendGame =
 
 
 type alias User =
-    { id : Id UserId }
+    { email : Email
+    , name : String
+    , password : String
+    }
+
+
+type alias PublicUser =
+    { email : Email
+    , name : String
+    }
+
+
+type alias Session =
+    { email : Maybe Email
+    , clientIds : List ClientId
+    }
 
 
 type alias BackendModel =
@@ -138,8 +171,13 @@ type alias BackendModel =
     , activeGames : SeqDict (Id GameId) OnlineGame
     , finishedGames : SeqDict (Id GameId) OnlineGame
     , seed : Random.Seed
-    , sessions : SeqDict SessionId (List ClientId)
+    , sessions : SeqDict SessionId Session
+    , users : SeqDict Email User
     }
+
+
+type alias Email =
+    String
 
 
 type FrontendMsg
@@ -182,9 +220,15 @@ type FrontendMsg
     | NextTutorialStep
     | CompleteTutorial
     | LeaveMatchmaking
+    | NavigateToLogin
     | LoadingComplete
     | KeyLeft
     | KeyRight
+    | TogglePasswordVisibility
+    | LoginOrSignUpClicked
+    | UpdateLoginEmail String
+    | UpdateLoginPassword String
+    | LogOut
 
 
 type FirstPlayer
@@ -210,6 +254,8 @@ type ToBackend
     | LeaveMatchmakingToBackend
     | MakeMoveToBackend Move
     | AbandonGameToBackend (Id GameId)
+    | LoginOrSignUpToBackend String String
+    | LogOutToBackend
 
 
 type BackendMsg
@@ -224,6 +270,10 @@ type ToFrontend
     | BackendModelReceivedToFrontend BackendModel
     | SendGameToFrontend FrontendGame
     | AlreadyInMatchmakingToFrontend
+    | SendUserToFrontend (Maybe PublicUser)
+    | SignUpDone PublicUser
+    | SignInDone PublicUser
+    | WrongPassword LoginErrorWrapper
 
 
 

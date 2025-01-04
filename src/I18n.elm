@@ -50,6 +50,18 @@ type alias Translation =
     , playerX : String
     , playerO : String
     , playingTutorial : String
+    , loginTitle : String
+    , emailLabel : String
+    , emailPlaceholder : String
+    , passwordLabel : String
+    , passwordPlaceholder : String
+    , loginOrSignUpButton : String
+    , loggingIn : String
+    , logoutButton : String
+    , loggedInAs : String
+    , wrongPassword : String
+    , passwordTooShort : String
+    , invalidEmail : String
     }
 
 
@@ -58,10 +70,10 @@ translations lang =
     case lang of
         FR ->
             { welcome = "Ultimate Tic Tac Toe"
-            , description = "Bienvenue dans Ultimate Tic Tac Toe ! Défiez votre réflexion stratégique dans cette version avancée du jeu."
+            , description = "Un jeu de morpion dans un morpion"
             , playWithFriend = "Jouer hors ligne avec un ami"
-            , playWithBot = "Jouer contre le bot"
-            , playOnline = "Jouer en ligne"
+            , playWithBot = "Jouer contre un bot"
+            , playOnline = "Jouer"
             , playingTutorial = "Mode : Tutoriel"
             , searching = "Recherche d'un adversaire"
             , chooseDifficulty = "Choisissez la difficulté"
@@ -105,14 +117,26 @@ translations lang =
             , tutorialTitle = "Mode : Tutoriel"
             , playerX = "Joueur X"
             , playerO = "Joueur O"
+            , loginTitle = "Créer un compte / Se connecter"
+            , emailLabel = "Email"
+            , emailPlaceholder = "Entrez votre email"
+            , passwordLabel = "Mot de passe"
+            , passwordPlaceholder = "Entrez votre mot de passe"
+            , loginOrSignUpButton = "Se connecter / S'inscrire"
+            , loggingIn = "Connexion en cours..."
+            , logoutButton = "Se déconnecter"
+            , loggedInAs = "Connecté en tant que "
+            , wrongPassword = "Mot de passe incorrect"
+            , passwordTooShort = "Le mot de passe doit contenir au moins 6 caractères"
+            , invalidEmail = "Adresse email invalide"
             }
 
         EN ->
             { welcome = "Ultimate Tic Tac Toe"
-            , description = "Welcome to Ultimate Tic Tac Toe! Challenge your strategic thinking in this advanced version of the game."
+            , description = "A game of tic tac toe within tic tac toe"
             , playWithFriend = "Play offline with a friend"
-            , playWithBot = "Play with bot"
-            , playOnline = "Play online"
+            , playWithBot = "Play against a bot"
+            , playOnline = "Play"
             , playingTutorial = "Mode: Tutorial"
             , searching = "Searching for opponent"
             , chooseDifficulty = "Choose difficulty"
@@ -156,6 +180,18 @@ translations lang =
             , tutorialTitle = "Mode: Tutorial"
             , playerX = "Player X"
             , playerO = "Player O"
+            , loginTitle = "Create Account / Login"
+            , emailLabel = "Email"
+            , emailPlaceholder = "Enter your email"
+            , passwordLabel = "Password"
+            , passwordPlaceholder = "Enter your password"
+            , loginOrSignUpButton = "Login / Sign Up"
+            , loggingIn = "Logging in..."
+            , logoutButton = "Log out"
+            , loggedInAs = "Logged in as "
+            , wrongPassword = "Wrong password"
+            , passwordTooShort = "Password must be at least 6 characters long"
+            , invalidEmail = "Invalid email address"
             }
 
 
