@@ -183,7 +183,21 @@ toFrontendGame ( sessionId, elo ) game =
     , lastMove = game.lastMove
     , moveHistory = game.moveHistory
     , currentMoveIndex = game.currentMoveIndex
-    , gameResult = Nothing
+    , gameResult =
+        case game.winner of
+            Just _ ->
+                if self == (X, elo) then
+                    Just Won
+
+                else
+                    Just Lost
+
+            Nothing ->
+                if isBigBoardComplete game.boards then
+                    Just Draw
+
+                else
+                    Nothing
     , botIsPlaying = False
     , winner = game.winner
     }
