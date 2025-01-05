@@ -259,6 +259,14 @@ update msg ({ localStorage } as model) =
 
         StartBotGame difficulty firstPlayer ->
             let
+                selfElo =
+                    case model.login of
+                        Registered user ->
+                            user.elo
+
+                        _ ->
+                            1000
+
                 ( botIsPlaying, newSeed ) =
                     case firstPlayer of
                         HumanBegins ->
@@ -280,7 +288,7 @@ update msg ({ localStorage } as model) =
             in
             ( { model
                 | route = GameRoute <| WithBot difficulty
-                , frontendGame = Just <| initialFrontendGame (Just self) (BotOpponent difficulty) botIsPlaying
+                , frontendGame = Just <| initialFrontendGame (Just ( self, selfElo )) (BotOpponent difficulty) botIsPlaying
                 , seed = newSeed
               }
             , Command.batch
@@ -669,7 +677,7 @@ update msg ({ localStorage } as model) =
             )
 
 
-initialFrontendGame : Maybe Player -> Opponent -> Bool -> FrontendGame
+initialFrontendGame : Maybe ( Player, Int ) -> Opponent -> Bool -> FrontendGame
 initialFrontendGame self opponent botIsPlaying =
     { id = Nothing
     , self = self
@@ -731,6 +739,9 @@ updateFromBackend msg model =
             , Command.none
             )
 
+        SendFinishedGameToFrontend frontendGame ->
+            ( { model | frontendGame = Just frontendGame }, Command.none )
+
 
 isValidMove : FrontendGame -> Move -> Bool
 isValidMove frontendGame move =
@@ -761,7 +772,7 @@ handlePlayerMove frontendGame model gameMode move =
                 GameRoute (WithBot _) ->
                     case newFrontendGame.winner of
                         Just winner ->
-                            if frontendGame.self == Just winner then
+                            if (frontendGame.self |> Maybe.map Tuple.first) == Just winner then
                                 Just Won
 
                             else
@@ -777,7 +788,7 @@ handlePlayerMove frontendGame model gameMode move =
                 GameRoute OnlineGameMode ->
                     case newFrontendGame.winner of
                         Just winner ->
-                            if frontendGame.self == Just winner then
+                            if (frontendGame.self |> Maybe.map Tuple.first) == Just winner then
                                 Just Won
 
                             else
@@ -1067,8 +1078,8 @@ viewHome ({ t, c } as userConfig) model =
                             , style "margin-bottom" "10px"
                             , style "opacity" "0.8"
                             ]
-                            [ text t.loggedInAs
-                            , text user.email
+                            [ div [] [ text t.loggedInAs, text user.email ]
+                            , div [] [ text t.eloRating, text (String.fromInt user.elo) ]
                             ]
 
                     _ ->
@@ -1174,7 +1185,7 @@ viewGame ({ t, c } as userConfig) model frontendGame mode =
                 WithBot _ ->
                     let
                         canIPlay =
-                            frontendGame.self == Just frontendGame.currentPlayer && frontendGame.winner == Nothing && not frontendGame.botIsPlaying
+                            (frontendGame.self |> Maybe.map Tuple.first) == Just frontendGame.currentPlayer && frontendGame.winner == Nothing && not frontendGame.botIsPlaying
                     in
                     div []
                         [ button
@@ -1559,7 +1570,7 @@ viewStatus ({ t, c } as userConfig) frontendGame mode =
                             Just winner ->
                                 case mode of
                                     OnlineGameMode ->
-                                        if frontendGame.self == Just winner then
+                                        if (frontendGame.self |> Maybe.map Tuple.first) == Just winner then
                                             t.youWon
 
                                         else
@@ -1588,7 +1599,7 @@ viewStatus ({ t, c } as userConfig) frontendGame mode =
 
                                         OnlineGameMode ->
                                             case frontendGame.self of
-                                                Just player ->
+                                                Just ( player, _ ) ->
                                                     if player == frontendGame.currentPlayer then
                                                         t.yourTurn
 
@@ -1610,6 +1621,35 @@ viewStatus ({ t, c } as userConfig) frontendGame mode =
               else
                 text ""
             ]
+        , case mode of
+            OnlineGameMode ->
+                case frontendGame.self of
+                    Just ( player, selfElo ) ->
+                        case frontendGame.opponent of
+                            OnlineOpponent ( _, opponentElo ) ->
+                                div
+                                    [ style "display" "flex"
+                                    , style "justify-content" "space-between"
+                                    , style "margin-top" "10px"
+                                    ]
+                                    [ div []
+                                        [ text t.eloRating
+                                        , text (String.fromInt selfElo)
+                                        ]
+                                    , div []
+                                        [ text t.eloRating
+                                        , text (String.fromInt opponentElo)
+                                        ]
+                                    ]
+
+                            _ ->
+                                text ""
+
+                    Nothing ->
+                        text ""
+
+            _ ->
+                text ""
         ]
 
 
@@ -1786,7 +1826,7 @@ viewBigBoard ({ t, c } as userConfig) frontendGame =
 
         isOpponentTurn =
             case frontendGame.self of
-                Just player ->
+                Just ( player, _ ) ->
                     player /= frontendGame.currentPlayer
 
                 Nothing ->
@@ -1842,7 +1882,7 @@ viewSmallBoard ({ t, c } as userConfig) frontendGame boardIndex smallBoardData =
 
         isOpponentTurn =
             case frontendGame.self of
-                Just player ->
+                Just ( player, _ ) ->
                     player /= frontendGame.currentPlayer
 
                 Nothing ->

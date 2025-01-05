@@ -122,11 +122,13 @@ type alias OnlineGame =
     , lastMove : Maybe Move
     , moveHistory : List Move
     , currentMoveIndex : Int
+    , eloX : Int
+    , eloO : Int
     }
 
 
 type Opponent
-    = OnlineOpponent SessionId
+    = OnlineOpponent (SessionId, Int)
     | BotOpponent BotDifficulty
     | FriendOpponent
 
@@ -136,7 +138,7 @@ type alias FrontendGame =
     , opponent : Opponent
     , boards : List SmallBoard
     , currentPlayer : Player
-    , self : Maybe Player
+    , self : Maybe (Player, Int)
     , activeBoard : Maybe Int
     , lastMove : Maybe Move
     , moveHistory : List Move
@@ -150,19 +152,22 @@ type alias FrontendGame =
 type alias User =
     { email : Email
     , name : String
-    , password : String
+    , encryptedPassword : String
+    , elo : Int
     }
 
 
 type alias PublicUser =
     { email : Email
     , name : String
+    , elo : Int
     }
 
 
 type alias Session =
     { email : Maybe Email
     , clientIds : List ClientId
+    , elo : Int
     }
 
 
@@ -269,6 +274,7 @@ type ToFrontend
     | OpponentLeftToFrontend FrontendGame
     | BackendModelReceivedToFrontend BackendModel
     | SendGameToFrontend FrontendGame
+    | SendFinishedGameToFrontend FrontendGame
     | AlreadyInMatchmakingToFrontend
     | SendUserToFrontend (Maybe PublicUser)
     | SignUpDone PublicUser

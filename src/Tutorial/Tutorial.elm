@@ -30,7 +30,7 @@ getTutorialBoard step =
             in
             { id = Nothing
             , boards = boards
-            , self = Just X
+            , self = Just ( X, 1000 )
             , currentPlayer = X
             , activeBoard = Just 4
             , winner = Nothing
@@ -73,7 +73,7 @@ getTutorialBoard step =
             { id = Nothing
             , boards = boards
             , currentPlayer = X
-            , self = Just X
+            , self = Just (X,1000)
             , activeBoard = Just 2
             , winner = Nothing
             , lastMove = Nothing
@@ -150,7 +150,7 @@ getTutorialBoard step =
             in
             { id = Nothing
             , boards = boards
-            , self = Just X
+            , self = Just (X,1000)
             , currentPlayer = X
             , activeBoard = Just 4
             , winner = Nothing
@@ -228,7 +228,7 @@ getTutorialBoard step =
             in
             { id = Nothing
             , boards = boards
-            , self = Just O
+            , self = Just (O,1000)
             , currentPlayer = O
             , activeBoard = Nothing
             , winner = Nothing
@@ -360,7 +360,7 @@ getTutorialBoard step =
             in
             { id = Nothing
             , boards = boards
-            , self = Just X
+            , self = Just (X,1000)
             , currentPlayer = X
             , activeBoard = Just 8 -- Force play in bottom-right board
             , winner = Nothing
@@ -492,7 +492,7 @@ getTutorialBoard step =
             in
             { id = Nothing
             , boards = boards
-            , self = Just X
+            , self = Just (X,1000)
             , currentPlayer = X
             , activeBoard = Nothing
             , winner = Just X

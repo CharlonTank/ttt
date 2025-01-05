@@ -6,6 +6,7 @@ import Effect.Lamdera exposing (ClientId, SessionId, broadcast, sendToFrontends)
 import Effect.Subscription as Subscription exposing (Subscription)
 import Effect.Task
 import Effect.Time
+import Elo
 import GameLogic exposing (checkBigBoardWinner, checkSmallBoardWinner, isBigBoardComplete)
 import Id exposing (GameId(..), Id(..))
 import Lamdera
@@ -25,6 +26,7 @@ toPublicUser : User -> PublicUser
 toPublicUser user =
     { email = user.email
     , name = user.name
+    , elo = user.elo
     }
 
 
@@ -79,7 +81,7 @@ update msg model =
                             (\mbSession ->
                                 case mbSession of
                                     Nothing ->
-                                        Just { email = Nothing, clientIds = [ clientId ] }
+                                        Just { email = Nothing, clientIds = [ clientId ], elo = 1000 }
 
                                     Just session ->
                                         Just { session | clientIds = clientId :: session.clientIds }
@@ -105,7 +107,7 @@ update msg model =
                             |> Dict.filter (\_ g -> g.playerX == sessionId || g.playerO == sessionId)
                             |> Dict.values
                             |> List.head
-                            |> Maybe.map (\g -> toFrontendGame sessionId g)
+                            |> Maybe.map (\g -> toFrontendGame ( sessionId, Dict.get sessionId model.sessions |> Maybe.map .elo |> Maybe.withDefault 1000 ) g)
                 in
                 case fGame of
                     Just game ->
@@ -162,15 +164,15 @@ update msg model =
                 ( { model | sessions = updatedSessions }, Command.none )
 
 
-toFrontendGame : SessionId -> OnlineGame -> FrontendGame
-toFrontendGame selfId game =
+toFrontendGame : (SessionId, Int) -> OnlineGame -> FrontendGame
+toFrontendGame ( sessionId, elo ) game =
     let
         ( self, opponent ) =
-            if game.playerX == selfId then
-                ( X, OnlineOpponent game.playerO )
+            if game.playerX == sessionId then
+                ( (X, elo), OnlineOpponent ( game.playerO, game.eloO ) )
 
             else
-                ( O, OnlineOpponent game.playerX )
+                ( (O, elo), OnlineOpponent ( game.playerX, game.eloX ) )
     in
     { id = Just game.id
     , self = Just self
@@ -217,10 +219,10 @@ handleGameAbandon gameId sessionId model =
 
                     command =
                         if game.playerX == sessionId then
-                            Effect.Lamdera.sendToFrontends game.playerO (OpponentLeftToFrontend (toFrontendGame game.playerO updatedGame))
+                            Effect.Lamdera.sendToFrontends game.playerO (OpponentLeftToFrontend (toFrontendGame ( game.playerO, game.eloO ) updatedGame))
 
                         else
-                            Effect.Lamdera.sendToFrontends game.playerX (OpponentLeftToFrontend (toFrontendGame game.playerX updatedGame))
+                            Effect.Lamdera.sendToFrontends game.playerX (OpponentLeftToFrontend (toFrontendGame ( game.playerX, game.eloX ) updatedGame))
                 in
                 ( { model
                     | activeGames = Dict.remove gameId model.activeGames
@@ -274,27 +276,14 @@ updateFromFrontend sessionId clientId msg model =
                         hashedPassword =
                             hashPassword password
                     in
-                    if hashedPassword == user.password then
+                    if hashedPassword == user.encryptedPassword then
                         let
                             updatedSessions =
-                                Dict.update sessionId
-                                    (\maybeSession ->
-                                        Just
-                                            { email = Just email
-                                            , clientIds =
-                                                case maybeSession of
-                                                    Just session ->
-                                                        if List.member clientId session.clientIds then
-                                                            session.clientIds
-
-                                                        else
-                                                            clientId :: session.clientIds
-
-                                                    Nothing ->
-                                                        [ clientId ]
-                                            }
-                                    )
-                                    model.sessions
+                                model.sessions
+                                    |> Dict.updateIfExists sessionId
+                                        (\session ->
+                                            { session | clientIds = clientId :: session.clientIds }
+                                        )
                         in
                         ( { model | sessions = updatedSessions }
                         , Effect.Lamdera.sendToFrontend clientId (SignInDone (toPublicUser user))
@@ -319,7 +308,8 @@ updateFromFrontend sessionId clientId msg model =
                             newUser =
                                 { email = email
                                 , name = "Player " ++ String.left 5 email
-                                , password = hashedPassword
+                                , encryptedPassword = hashedPassword
+                                , elo = 1000
                                 }
 
                             updatedUsers =
@@ -341,6 +331,7 @@ updateFromFrontend sessionId clientId msg model =
 
                                                     Nothing ->
                                                         [ clientId ]
+                                            , elo = 1000
                                             }
                                     )
                                     model.sessions
@@ -408,7 +399,7 @@ handleJoinMatchmaking sessionId _ model =
 
                     newGame : OnlineGame
                     newGame =
-                        initialOnlineGame (Id gameUuid) firstPlayer secondPlayer
+                        initialOnlineGame (Id gameUuid) firstPlayer secondPlayer model
 
                     newModel =
                         { model
@@ -419,8 +410,8 @@ handleJoinMatchmaking sessionId _ model =
                 in
                 ( newModel
                 , Command.batch
-                    [ Effect.Lamdera.sendToFrontends secondPlayer (SendGameToFrontend (toFrontendGame secondPlayer newGame))
-                    , Effect.Lamdera.sendToFrontends firstPlayer (SendGameToFrontend (toFrontendGame firstPlayer newGame))
+                    [ Effect.Lamdera.sendToFrontends secondPlayer (SendGameToFrontend (toFrontendGame ( secondPlayer, newGame.eloO ) newGame))
+                    , Effect.Lamdera.sendToFrontends firstPlayer (SendGameToFrontend (toFrontendGame ( firstPlayer, newGame.eloX ) newGame))
                     ]
                 )
 
@@ -430,8 +421,19 @@ handleJoinMatchmaking sessionId _ model =
                 )
 
 
-initialOnlineGame : Id GameId -> SessionId -> SessionId -> OnlineGame
-initialOnlineGame id firstPlayer secondPlayer =
+initialOnlineGame : Id GameId -> SessionId -> SessionId -> BackendModel -> OnlineGame
+initialOnlineGame id firstPlayer secondPlayer model =
+    let
+        firstPlayerElo =
+            Dict.get firstPlayer model.sessions
+                |> Maybe.map .elo
+                |> Maybe.withDefault 1000
+
+        secondPlayerElo =
+            Dict.get secondPlayer model.sessions
+                |> Maybe.map .elo
+                |> Maybe.withDefault 1000
+    in
     { id = id
     , playerX = firstPlayer
     , playerO = secondPlayer
@@ -442,6 +444,8 @@ initialOnlineGame id firstPlayer secondPlayer =
     , lastMove = Nothing
     , moveHistory = []
     , currentMoveIndex = -1
+    , eloX = firstPlayerElo
+    , eloO = secondPlayerElo
     }
 
 
@@ -562,25 +566,112 @@ handleMakeMove sessionId _ move model =
 
                 isGameFinished =
                     checkBigBoardWinner updatedBoards /= Nothing || isBigBoardComplete updatedBoards
-
-                updatedModel =
-                    if isGameFinished then
-                        { model
-                            | activeGames = Dict.remove gameId model.activeGames
-                            , finishedGames = Dict.insert gameId updatedGame model.finishedGames
-                        }
-
-                    else
-                        { model
-                            | activeGames = Dict.insert gameId updatedGame model.activeGames
-                        }
             in
-            ( updatedModel
-            , Command.batch
-                [ Effect.Lamdera.sendToFrontends opponent (SendGameToFrontend (toFrontendGame opponent updatedGame))
-                , Effect.Lamdera.sendToFrontends sessionId (SendGameToFrontend (toFrontendGame sessionId updatedGame))
-                ]
-            )
+            if isGameFinished then
+                finishGame gameId updatedGame model
+
+            else
+                ( { model | activeGames = Dict.insert gameId updatedGame model.activeGames }
+                , Command.batch
+                    [ Effect.Lamdera.sendToFrontends opponent (SendGameToFrontend (toFrontendGame ( opponent, Dict.get opponent model.sessions |> Maybe.map .elo |> Maybe.withDefault 1000 ) updatedGame))
+                    , Effect.Lamdera.sendToFrontends sessionId (SendGameToFrontend (toFrontendGame ( sessionId, Dict.get sessionId model.sessions |> Maybe.map .elo |> Maybe.withDefault 1000 ) updatedGame))
+                    ]
+                )
 
         Nothing ->
             ( model, Command.none )
+
+
+finishGame : Id GameId -> OnlineGame -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
+finishGame gameId game model =
+    let
+        -- Get player emails and sessions for Elo updates
+        playerXSession =
+            Dict.get game.playerX model.sessions
+
+        playerOSession =
+            Dict.get game.playerO model.sessions
+
+        playerXEmail =
+            playerXSession |> Maybe.andThen .email
+
+        playerOEmail =
+            playerOSession |> Maybe.andThen .email
+
+        isDraw =
+            game.winner == Nothing && isBigBoardComplete game.boards
+
+        ( newEloX, newEloO ) =
+            Elo.updateEloRatings
+                { winner = game.eloX
+                , loser = game.eloO
+                , isDraw = isDraw
+                }
+
+        updatedSessions =
+            model.sessions
+                |> (case playerXEmail of
+                        Just _ ->
+                            Dict.update game.playerX
+                                (\mbSession ->
+                                    mbSession
+                                        |> Maybe.map (\s -> { s | elo = newEloX })
+                                )
+
+                        Nothing ->
+                            identity
+                   )
+                |> (case playerOEmail of
+                        Just _ ->
+                            Dict.update game.playerO
+                                (\mbSession ->
+                                    mbSession
+                                        |> Maybe.map (\s -> { s | elo = newEloO })
+                                )
+
+                        Nothing ->
+                            identity
+                   )
+
+        updatedUsers =
+            model.users
+                |> (case playerXEmail of
+                        Just emailX ->
+                            Dict.update emailX
+                                (\mbUser ->
+                                    mbUser
+                                        |> Maybe.map (\u -> { u | elo = newEloX })
+                                )
+
+                        Nothing ->
+                            identity
+                   )
+                |> (case playerOEmail of
+                        Just emailO ->
+                            Dict.update emailO
+                                (\mbUser ->
+                                    mbUser
+                                        |> Maybe.map (\u -> { u | elo = newEloO })
+                                )
+
+                        Nothing ->
+                            identity
+                   )
+
+        updatedGame =
+            { game | eloX = newEloX, eloO = newEloO }
+
+        updatedModel =
+            { model
+                | activeGames = Dict.remove gameId model.activeGames
+                , finishedGames = Dict.insert gameId updatedGame model.finishedGames
+                , users = updatedUsers
+                , sessions = updatedSessions
+            }
+    in
+    ( updatedModel
+    , Command.batch
+        [ Effect.Lamdera.sendToFrontends game.playerO (SendFinishedGameToFrontend (toFrontendGame ( game.playerO, newEloO ) updatedGame))
+        , Effect.Lamdera.sendToFrontends game.playerX (SendFinishedGameToFrontend (toFrontendGame ( game.playerX, newEloX ) updatedGame))
+        ]
+    )

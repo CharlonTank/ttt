@@ -62,6 +62,7 @@ type alias Translation =
     , wrongPassword : String
     , passwordTooShort : String
     , invalidEmail : String
+    , eloRating : String
     }
 
 
@@ -129,6 +130,7 @@ translations lang =
             , wrongPassword = "Mot de passe incorrect"
             , passwordTooShort = "Le mot de passe doit contenir au moins 6 caractères"
             , invalidEmail = "Adresse email invalide"
+            , eloRating = "Classement Elo : "
             }
 
         EN ->
@@ -192,6 +194,7 @@ translations lang =
             , wrongPassword = "Wrong password"
             , passwordTooShort = "Password must be at least 6 characters long"
             , invalidEmail = "Invalid email address"
+            , eloRating = "Elo rating: "
             }
 
 
