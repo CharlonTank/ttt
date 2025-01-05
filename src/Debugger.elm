@@ -8,6 +8,7 @@ import I18n exposing (languageToString)
 import Json.Decode as D
 import LocalStorage exposing (LocalStorage)
 import Theme exposing (..)
+import Tutorial.Types exposing (TutorialStep(..))
 import Types exposing (..)
 
 
@@ -74,7 +75,13 @@ view { c } model =
                 , model.localStorage |> localStorageToString |> text
                 , text "\nModel State:\n"
                 , text <| "language: " ++ (model.localStorage.language |> languageToString) ++ "\n"
-                , text <| "userPreference: " ++ userPreferenceToString model.localStorage.userPreference model.localStorage.systemMode ++ "\n\n"
+                , text <| "userPreference: " ++ userPreferenceToString model.localStorage.userPreference model.localStorage.systemMode ++ "\n"
+                , text <| "route: " ++ routeToString model.route ++ "\n"
+                , text <| "login: " ++ loginStateToString model.login ++ "\n"
+                , text <| "selectedDifficulty: " ++ difficultyToString model.selectedDifficulty ++ "\n"
+                , text <| "tutorialState: " ++ tutorialStateToString model.tutorialState ++ "\n"
+                , text <| "inMatchmaking: " ++ boolToString model.inMatchmaking ++ "\n"
+                , text <| "isLoading: " ++ boolToString model.isLoading ++ "\n\n"
                 , text "Game State:\n"
                 , model.frontendGame |> Maybe.map gameToString |> Maybe.withDefault "No frontend game found" |> text
                 ]
@@ -95,6 +102,124 @@ view { c } model =
 
     else
         []
+
+
+routeToString : Route -> String
+routeToString route =
+    case route of
+        HomeRoute ->
+            "HomeRoute"
+
+        GameRoute mode ->
+            "GameRoute " ++ gameModeToString mode
+
+        TutorialRoute ->
+            "TutorialRoute"
+
+        AdminRoute ->
+            "AdminRoute"
+
+        LoginRoute ->
+            "LoginRoute"
+
+
+gameModeToString : GameMode -> String
+gameModeToString mode =
+    case mode of
+        WithBot difficulty ->
+            "WithBot " ++ difficultyToString (Just difficulty)
+
+        WithFriend ->
+            "WithFriend"
+
+        OnlineGameMode ->
+            "OnlineGameMode"
+
+
+loginStateToString : LoginState -> String
+loginStateToString state =
+    case state of
+        NotLoggedIn ->
+            "NotLoggedIn"
+
+        WaitingForAnswer ->
+            "WaitingForAnswer"
+
+        LoginError error ->
+            "LoginError " ++ loginErrorToString error
+
+        Registered user ->
+            "Registered { email = " ++ user.email ++ ", elo = " ++ String.fromInt user.elo ++ " }"
+
+
+loginErrorToString : LoginErrorWrapper -> String
+loginErrorToString error =
+    case error of
+        WrongPasswordError ->
+            "WrongPasswordError"
+
+        PasswordTooShortError ->
+            "PasswordTooShortError"
+
+        InvalidEmailError ->
+            "InvalidEmailError"
+
+
+difficultyToString : Maybe BotDifficulty -> String
+difficultyToString maybeDifficulty =
+    case maybeDifficulty of
+        Just difficulty ->
+            case difficulty of
+                Easy ->
+                    "Easy"
+
+                Medium ->
+                    "Medium"
+
+                Hard ->
+                    "Hard"
+
+                Elite ->
+                    "Elite"
+
+        Nothing ->
+            "Nothing"
+
+
+tutorialStateToString : Maybe TutorialStep -> String
+tutorialStateToString maybeStep =
+    case maybeStep of
+        Just step ->
+            case step of
+                TutorialStep1 ->
+                    "TutorialStep1"
+
+                TutorialStep2 ->
+                    "TutorialStep2"
+
+                TutorialStep3 ->
+                    "TutorialStep3"
+
+                TutorialStep4 ->
+                    "TutorialStep4"
+
+                TutorialStep5 ->
+                    "TutorialStep5"
+
+                TutorialStep6 ->
+                    "TutorialStep6"
+
+        Nothing ->
+            "Nothing"
+
+
+boolToString : Bool -> String
+boolToString bool =
+    if bool then
+        "True"
+
+    else
+        "False"
 
 
 gameToString : FrontendGame -> String

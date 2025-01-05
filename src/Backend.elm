@@ -186,7 +186,7 @@ toFrontendGame ( sessionId, elo ) game =
     , gameResult =
         case game.winner of
             Just _ ->
-                if self == (X, elo) then
+                if self == ( X, elo ) then
                     Just Won
 
                 else
@@ -355,9 +355,23 @@ updateFromFrontend sessionId clientId msg model =
                         let
                             updatedSessions =
                                 model.sessions
-                                    |> Dict.updateIfExists sessionId
-                                        (\session ->
-                                            { session | clientIds = clientId :: session.clientIds }
+                                    |> Dict.update sessionId
+                                        (\maybeSession ->
+                                            Just
+                                                { email = Just email
+                                                , clientIds =
+                                                    case maybeSession of
+                                                        Just session ->
+                                                            if List.member clientId session.clientIds then
+                                                                session.clientIds
+
+                                                            else
+                                                                clientId :: session.clientIds
+
+                                                        Nothing ->
+                                                            [ clientId ]
+                                                , elo = user.elo
+                                                }
                                         )
                         in
                         ( { model | sessions = updatedSessions }

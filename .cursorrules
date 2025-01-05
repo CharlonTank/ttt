@@ -1,0 +1,10 @@
+An action by a user/player will always be a FrontendMsg.
+Then, as a side effect, it's possible that we want to talk to the backend, for that we will use Effect.Lamdera.sendToBackend with a ToBackend variant.
+After making some modifications you must run `lamdera make src/Frontend.elm src/Backend.elm` so see the compilation errors.
+If you're making some tests: use elm-test to test the tests!
+When you want to create a migration first run lamdera check, then complete the migrations that have been generated.
+When you need to add a dependency, please use lamdera install instead of modifying directly the elm.json
+When you fix compilation errors, look around before going straight to try to fix. Avoid to use anonymous fonctions, because most of the time when you do, it's because you don't understand the compilation error.
+When you're fixing compilation errors from lamdera make, just fix ONE, then compile again to see if you fixed it before going to the next one
+
+DO NOT ADD/MODIFY SOMETHING I DIDN'T ASKED YOU TO DO
