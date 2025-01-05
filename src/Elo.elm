@@ -5,10 +5,11 @@ module Elo exposing
     , updateEloRatings
     )
 
-
 {-| Calculate the expected score for a player based on their rating and their opponent's rating.
 The expected score is a number between 0 and 1 representing the probability of winning.
 -}
+
+
 expectedScore : Int -> Int -> Float
 expectedScore playerRating opponentRating =
     1 / (1 + (10 ^ (toFloat (opponentRating - playerRating) / 400)))
@@ -31,9 +32,11 @@ kFactor currentRating =
 
 
 {-| Calculate the new rating for a player based on:
+
   - Their current rating
   - Their opponent's rating
   - The actual score (1 for win, 0.5 for draw, 0 for loss)
+
 -}
 calculateNewRating : Int -> Int -> Float -> Int
 calculateNewRating currentRating opponentRating actualScore =
@@ -66,4 +69,4 @@ updateEloRatings { winner, loser, isDraw } =
     else
         ( calculateNewRating winner loser 1.0
         , calculateNewRating loser winner 0.0
-        ) 
+        )

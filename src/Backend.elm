@@ -7,7 +7,7 @@ import Effect.Subscription as Subscription exposing (Subscription)
 import Effect.Task
 import Effect.Time
 import Elo
-import GameLogic exposing (checkBigBoardWinner, checkSmallBoardWinner, isBigBoardComplete)
+import GameLogic exposing (checkBigBoardWinner, checkSmallBoardWinner, isBigBoardComplete, isSmallBoardComplete)
 import Id exposing (GameId(..), Id(..))
 import Lamdera
 import List.Extra
@@ -15,7 +15,6 @@ import Random
 import SeqDict as Dict exposing (SeqDict)
 import Types exposing (..)
 import UUID
-import GameLogic exposing (isSmallBoardComplete)
 
 
 hashPassword : String -> String
@@ -165,15 +164,15 @@ update msg model =
                 ( { model | sessions = updatedSessions }, Command.none )
 
 
-toFrontendGame : (SessionId, Int) -> OnlineGame -> FrontendGame
+toFrontendGame : ( SessionId, Int ) -> OnlineGame -> FrontendGame
 toFrontendGame ( sessionId, elo ) game =
     let
         ( self, opponent ) =
             if game.playerX == sessionId then
-                ( (X, elo), OnlineOpponent ( game.playerO, game.eloO ) )
+                ( ( X, elo ), OnlineOpponent ( game.playerO, game.eloO ) )
 
             else
-                ( (O, elo), OnlineOpponent ( game.playerX, game.eloX ) )
+                ( ( O, elo ), OnlineOpponent ( game.playerX, game.eloX ) )
     in
     { id = Just game.id
     , self = Just self
@@ -211,23 +210,84 @@ handleGameAbandon gameId sessionId model =
 
             else
                 let
-                    updatedGame =
+                    -- Determine winner and loser
+                    players =
                         if game.playerX == sessionId then
-                            { game | winner = Just O }
+                            { winnerSession = game.playerO
+                            , winnerElo = game.eloO
+                            , loserSession = game.playerX
+                            , loserElo = game.eloX
+                            }
 
                         else
-                            { game | winner = Just X }
+                            { winnerSession = game.playerX
+                            , winnerElo = game.eloX
+                            , loserSession = game.playerO
+                            , loserElo = game.eloO
+                            }
+
+                    -- Calculate ELO changes using Elo module
+                    ( newWinnerElo, newLoserElo ) =
+                        Elo.updateEloRatings
+                            { winner = players.winnerElo
+                            , loser = players.loserElo
+                            , isDraw = False
+                            }
+
+                    -- Update sessions with new ELO ratings
+                    updatedSessions =
+                        model.sessions
+                            |> Dict.update players.winnerSession
+                                (\mbSession ->
+                                    case mbSession of
+                                        Just session ->
+                                            Just { session | elo = newWinnerElo }
+
+                                        Nothing ->
+                                            Nothing
+                                )
+                            |> Dict.update players.loserSession
+                                (\mbSession ->
+                                    case mbSession of
+                                        Just session ->
+                                            Just { session | elo = newLoserElo }
+
+                                        Nothing ->
+                                            Nothing
+                                )
+
+                    updatedGame =
+                        if game.playerX == sessionId then
+                            { game
+                                | winner = Just O
+                                , eloO = newWinnerElo
+                                , eloX = newLoserElo
+                            }
+
+                        else
+                            { game
+                                | winner = Just X
+                                , eloX = newWinnerElo
+                                , eloO = newLoserElo
+                            }
 
                     command =
                         if game.playerX == sessionId then
-                            Effect.Lamdera.sendToFrontends game.playerO (OpponentLeftToFrontend (toFrontendGame ( game.playerO, game.eloO ) updatedGame))
+                            Command.batch
+                                [ Effect.Lamdera.sendToFrontends game.playerO (OpponentLeftToFrontend (toFrontendGame ( game.playerO, newWinnerElo ) updatedGame))
+                                , Effect.Lamdera.sendToFrontends game.playerX (OpponentLeftToFrontend (toFrontendGame ( game.playerX, newLoserElo ) updatedGame))
+                                ]
 
                         else
-                            Effect.Lamdera.sendToFrontends game.playerX (OpponentLeftToFrontend (toFrontendGame ( game.playerX, game.eloX ) updatedGame))
+                            Command.batch
+                                [ Effect.Lamdera.sendToFrontends game.playerX (OpponentLeftToFrontend (toFrontendGame ( game.playerX, newWinnerElo ) updatedGame))
+                                , Effect.Lamdera.sendToFrontends game.playerO (OpponentLeftToFrontend (toFrontendGame ( game.playerO, newLoserElo ) updatedGame))
+                                ]
                 in
                 ( { model
                     | activeGames = Dict.remove gameId model.activeGames
                     , finishedGames = Dict.insert gameId updatedGame model.finishedGames
+                    , sessions = updatedSessions
                   }
                 , command
                 )

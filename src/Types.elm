@@ -128,7 +128,7 @@ type alias OnlineGame =
 
 
 type Opponent
-    = OnlineOpponent (SessionId, Int)
+    = OnlineOpponent ( SessionId, Int )
     | BotOpponent BotDifficulty
     | FriendOpponent
 
@@ -138,7 +138,7 @@ type alias FrontendGame =
     , opponent : Opponent
     , boards : List SmallBoard
     , currentPlayer : Player
-    , self : Maybe (Player, Int)
+    , self : Maybe ( Player, Int )
     , activeBoard : Maybe Int
     , lastMove : Maybe Move
     , moveHistory : List Move
