@@ -26,7 +26,7 @@ isSmallBoardActive : Maybe Int -> Int -> SmallBoard -> Bool
 isSmallBoardActive activeBoardIndex boardIndex board =
     case activeBoardIndex of
         Nothing ->
-            board.winner == Nothing
+            board.winner == Nothing && List.any ((==) Empty) board.cells
 
         Just index ->
             index == boardIndex

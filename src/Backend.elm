@@ -15,6 +15,7 @@ import Random
 import SeqDict as Dict exposing (SeqDict)
 import Types exposing (..)
 import UUID
+import GameLogic exposing (isSmallBoardComplete)
 
 
 hashPassword : String -> String
@@ -562,6 +563,12 @@ handleMakeMove sessionId _ move model =
                         , moveHistory = game.moveHistory ++ [ move ]
                         , currentMoveIndex = List.length game.moveHistory
                         , winner = checkBigBoardWinner updatedBoards
+                        , activeBoard =
+                            if isSmallBoardComplete (List.Extra.getAt move.cellIndex updatedBoards |> Maybe.withDefault emptySmallBoard) then
+                                Nothing
+
+                            else
+                                Just move.cellIndex
                     }
 
                 isGameFinished =
