@@ -164,7 +164,7 @@ viewTutorialCell { c } tutorialStep boardIndex isClickableIndex cellStyles cellI
         [ symbol ]
 
 
-viewSmallBoardTutorial : UserConfig -> TutorialStep -> FrontendGame -> Int -> SmallBoard -> Html FrontendMsg
+viewSmallBoardTutorial : UserConfig -> TutorialStep -> FrontendOnlineGame -> Int -> SmallBoard -> Html FrontendMsg
 viewSmallBoardTutorial ({ c } as userConfig) tutorialStep frontendGame boardIndex smallBoardData =
     let
         isActive =
@@ -195,7 +195,6 @@ viewSmallBoardTutorial ({ c } as userConfig) tutorialStep frontendGame boardInde
 
         isClickable =
             isActive
-                && not frontendGame.botIsPlaying
                 && not isViewingHistory
                 && (case tutorialStep of
                         TutorialStep1 ->
@@ -292,7 +291,7 @@ viewSmallBoardTutorial ({ c } as userConfig) tutorialStep frontendGame boardInde
         cellElements
 
 
-viewTutorialOverlay : UserConfig -> FrontendGame -> TutorialStep -> Html FrontendMsg
+viewTutorialOverlay : UserConfig -> FrontendOnlineGame -> TutorialStep -> Html FrontendMsg
 viewTutorialOverlay { t, c } frontendGame tutorialStep =
     let
         ( tutorialMessage, stepNumber ) =
@@ -409,7 +408,7 @@ shouldEnableNextButton step =
             False
 
 
-viewGame : UserConfig -> FrontendGame -> FrontendModel -> TutorialStep -> Html FrontendMsg
+viewGame : UserConfig -> FrontendOnlineGame -> FrontendModel -> TutorialStep -> Html FrontendMsg
 viewGame ({ t, c } as userConfig) frontendGame model tutorialStep =
     div
         [ style "display" "flex"
@@ -453,7 +452,7 @@ viewGame ({ t, c } as userConfig) frontendGame model tutorialStep =
         ]
 
 
-viewStatus : UserConfig -> FrontendGame -> Html msg
+viewStatus : UserConfig -> FrontendOnlineGame -> Html msg
 viewStatus ({ t, c } as userConfig) frontendGame =
     div
         [ style "margin" "10px 0"
@@ -487,7 +486,7 @@ viewStatus ({ t, c } as userConfig) frontendGame =
         ]
 
 
-viewBigBoardTutorial : UserConfig -> FrontendGame -> TutorialStep -> Html FrontendMsg
+viewBigBoardTutorial : UserConfig -> FrontendOnlineGame -> TutorialStep -> Html FrontendMsg
 viewBigBoardTutorial ({ t, c } as userConfig) frontendGame tutorialStep =
     let
         boardStyle =

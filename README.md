@@ -1,94 +1,65 @@
-# Ultimate Tic-tac-toe
+# Create Lamdera App
 
-## 🎯 Game Rules
+A utility script to initialize a new Lamdera application with common utilities and configurations.
 
-Ultimate Tic-tac-toe is an advanced version of the classic game where each cell is itself a small Tic-tac-toe game. To win, you must align three won small Tic-tac-toe games on the large board.
+## Features
 
-## 🎮 Features
+- Initializes a new Lamdera project
+- Automatically installs common packages:
+  - `elm/http`
+  - `elm/time`
+  - `elm/json`
+- Creates utility files:
+  - `.cursorrules` - Coding guidelines and best practices
+  - `lamdera-dev-watch.sh` - Development server with auto-reload
+  - `openeditor.sh` - Cursor editor integration
+  - `toggle_debugger.py` - Backend debugger toggle utility
+- Optional GitHub repository creation (public or private)
 
-- **Multiple Game Modes**
-  - Player vs Player online (with matchmaking)
-  - Player vs Player offline
-  - Player vs Bot (4 difficulty levels: Easy, Medium, Hard, Elite)
+## Prerequisites
 
-- **Modern User Interface**
-  - Dark / Light mode
-  - Multilingual support (French / English)
-  - Responsive and intuitive interface
+- [Lamdera](https://lamdera.com/)
+- [GitHub CLI](https://cli.github.com/) (optional, for repository creation)
 
-- **Advanced Features**
-  - Move history (Undo/Redo)
-  - First player selection (Human/Bot/Random)
-  - Integrated debug mode
-  - User preferences saving (language, dark mode)
-  - Tutorial mode
-  - "Play for me" feature against bots
+## Installation
 
-## 🛠 Technologies
-
-- **Frontend**: Elm
-- **Backend**: Lamdera (Elm fullstack)
-- **State Management**: Elm Architecture
-- **Persistence**: LocalStorage for user preferences
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Install Lamdera by following the instructions at [Lamdera.com](https://lamdera.com/)
-- Git for cloning the repository
-
-### Setup and Development
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/CharlonTank/ttt.git
-   cd ttt
-   ```
-
-2. Start the development server with auto-reload:
-   First, make sure you have:
-   - `fswatch` installed (`brew install fswatch` on macOS)
-
-   Then run:
-   ```bash
-   ./lamdera-dev-watch.sh
-   ```
-   The application will be available at `http://localhost:8000` and will automatically reload when elm-pkg-js files are modified.
-
-## 📁 Debugging
-
-### Frontend Debug Panel
-- Click 4 times on the French flag to activate the debug panel
-- The debug panel shows:
-  - Local storage content
-  - Current language
-  - Dark mode status
-  - Game state
-- The panel is draggable and resizable
-
-### Backend Debugger
-To enable backend debugger:
 ```bash
-./toggle_debugger.py
+# Clone the repository
+git clone https://github.com/CharlonTank/create-lamdera-app.git
+
+# Copy the script to your PATH
+sudo cp create-lamdera-app/create-lamdera-app.sh /usr/local/bin/create-lamdera-app
+
+# Make it executable
+sudo chmod +x /usr/local/bin/create-lamdera-app
 ```
-This will set up the necessary code for communicating with the Martin Stewart Lamdera debugger and will also open the debugger in your browser.
 
-## 📁 Project Structure
+## Usage
 
-- `src/`
-  - `Frontend.elm` - User interface and frontend logic
-  - `Backend.elm` - Server logic
-  - `Types.elm` - Shared types and data structures
-  - `Bot.elm` - Bot logic and AI algorithms
-  - `I18n.elm` - Internationalization
-  - `Color.elm` - Color theme definitions
-  - `Env.elm` - Environment variables
-  - `Debugger.elm` - Frontend debug panel
-  - `Tutorial/` - Tutorial mode implementation
-    - `Tutorial.elm` - Tutorial logic
-    - `View.elm` - Tutorial UI components
-    - `Types.elm` - Tutorial-specific types
-  - `Evergreen/` - Lamdera migrations
+```bash
+# Navigate to where you want to create your project
+cd your/projects/directory
 
-## 🔧 Contributing
+# Run the script
+create-lamdera-app
 
-Contributions are welcome! Feel free to open an issue or submit a pull request.
+# Follow the prompts:
+# 1. Enter your project name
+# 2. Choose whether to create a GitHub repository
+# 3. If yes, choose public or private repository
+```
+
+## Development Server
+
+After creating your project:
+
+```bash
+cd your-project-name
+./lamdera-dev-watch.sh
+```
+
+This will start the Lamdera development server with auto-reload capability.
+
+## Contributing
+
+Feel free to open issues or submit pull requests!

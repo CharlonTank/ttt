@@ -5,7 +5,7 @@ port module Audio exposing
 
 import Effect.Command as Command exposing (Command, FrontendOnly)
 import Json.Encode as E
-import Types exposing (Player(..))
+import Types exposing (PlayerSide(..))
 
 
 port playSound_ : E.Value -> Cmd msg
@@ -16,7 +16,7 @@ type Sound
     | WinSound
     | LoseSound
     | DrawSound
-    | MoveSound Player
+    | MoveSound PlayerSide
     | ErrorSound
     | SmallWinSound
     | PlayOnlineSound

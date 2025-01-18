@@ -17,6 +17,7 @@ import Effect.Process
 import Effect.Subscription as Subscription exposing (Subscription)
 import Effect.Task
 import Effect.Time
+import Elo
 import Email
 import GameLogic
     exposing
@@ -85,6 +86,7 @@ init url key =
             , localStorage = LocalStorage.default
             , seed = Nothing
             , login = WaitingForAnswer
+            , self = Nothing
             , rulesModalVisible = False
             , frClickCount = 0
             , debuggerVisible = False
@@ -173,46 +175,57 @@ update msg ({ localStorage } as model) =
             model.frontendGame
                 |> Maybe.map
                     (\frontendGame ->
-                        if frontendGame.currentMoveIndex < List.length frontendGame.moveHistory - 1 then
-                            ( model, Command.none )
-
-                        else
-                            case model.route of
-                                GameRoute (WithBot difficulty) ->
-                                    handlePlayerMove frontendGame model (WithBot difficulty) move
-                                        |> (\( updatedFrontendGame, cmd ) ->
-                                                ( { model | frontendGame = Just { updatedFrontendGame | botIsPlaying = True } }
-                                                , Command.batch
-                                                    [ cmd
-                                                    , Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 100))
-                                                    ]
-                                                )
-                                           )
-
-                                GameRoute WithFriend ->
-                                    handlePlayerMove frontendGame model WithFriend move
-                                        |> (\( updatedFrontendGame, cmd ) ->
-                                                ( { model | frontendGame = Just updatedFrontendGame }
-                                                , cmd
-                                                )
-                                           )
-
-                                GameRoute OnlineGameMode ->
-                                    handlePlayerMove frontendGame model OnlineGameMode move
-                                        |> (\( updatedFrontendGame, cmd ) ->
-                                                ( { model | frontendGame = Just updatedFrontendGame }
-                                                , cmd
-                                                )
-                                           )
-
-                                _ ->
+                        case frontendGame of
+                            OnlineGame onlineGame ->
+                                if onlineGame.currentMoveIndex < List.length onlineGame.moveHistory - 1 then
                                     ( model, Command.none )
+
+                                else
+                                    handlePlayerMove onlineGame model OnlineGameMode move
+                                        |> (\( updatedFrontendGame, cmd ) ->
+                                                ( { model | frontendGame = Just <| OnlineGame updatedFrontendGame }
+                                                , cmd
+                                                )
+                                           )
+
+                            OfflineGame offlineGame ->
+                                if offlineGame.currentMoveIndex < List.length offlineGame.moveHistory - 1 then
+                                    ( model, Command.none )
+
+                                else
+                                    case model.route of
+                                        GameRoute (WithBot difficulty) ->
+                                            handlePlayerMove offlineGame model (WithBot difficulty) move
+                                                |> (\( updatedFrontendGame, cmd ) ->
+                                                        let
+                                                            a : FrontendOfflineGame
+                                                            a =
+                                                                { updatedFrontendGame | botIsPlaying = True }
+                                                        in
+                                                        ( { model | frontendGame = Just (OfflineGame a) }
+                                                        , Command.batch
+                                                            [ cmd
+                                                            , Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 100))
+                                                            ]
+                                                        )
+                                                   )
+
+                                        GameRoute WithFriend ->
+                                            handlePlayerMove offlineGame model WithFriend move
+                                                |> (\( updatedFrontendGame, cmd ) ->
+                                                        ( { model | frontendGame = Just <| OfflineGame updatedFrontendGame }
+                                                        , cmd
+                                                        )
+                                                   )
+
+                                        _ ->
+                                            ( model, Command.none )
                     )
                 |> Maybe.withDefault ( model, Command.none )
 
         BotMove ->
             case ( model.route, model.frontendGame ) of
-                ( GameRoute (WithBot difficulty), Just game ) ->
+                ( GameRoute (WithBot difficulty), Just (OfflineGame game) ) ->
                     let
                         botMove =
                             Bot.findBestMove game difficulty
@@ -225,7 +238,7 @@ update msg ({ localStorage } as model) =
                                 Nothing ->
                                     ( game, Command.none )
                     in
-                    ( { model | frontendGame = Just { newFrontendGame | botIsPlaying = False } }, cmd )
+                    ( { model | frontendGame = Just (OfflineGame { newFrontendGame | botIsPlaying = False }) }, cmd )
 
                 _ ->
                     ( model, Command.none )
@@ -240,7 +253,9 @@ update msg ({ localStorage } as model) =
         StartGameWithFriend ->
             ( { model
                 | route = GameRoute WithFriend
-                , frontendGame = Just <| initialFrontendGame Nothing FriendOpponent False
+                , frontendGame =
+                    model.self
+                        |> Maybe.map (\self -> OfflineGame <| initialOfflineFrontendGame self FriendOpponent False)
               }
             , Audio.playSound ButtonClickSound
             )
@@ -258,48 +273,38 @@ update msg ({ localStorage } as model) =
             )
 
         StartBotGame difficulty firstPlayer ->
-            let
-                selfElo =
-                    case model.login of
-                        Registered user ->
-                            user.elo
+            model.self
+                |> Maybe.map
+                    (\self ->
+                        let
+                            ( botBegins, newSeed ) =
+                                case firstPlayer of
+                                    HumanBegins ->
+                                        ( False, model.seed )
 
-                        _ ->
-                            1000
+                                    BotBegins ->
+                                        ( True, model.seed )
 
-                ( botIsPlaying, newSeed ) =
-                    case firstPlayer of
-                        HumanBegins ->
-                            ( False, model.seed )
+                                    RandomBegins ->
+                                        Random.step Random.Extra.bool (model.seed |> Maybe.withDefault (Random.initialSeed 42))
+                                            |> Tuple.mapSecond Just
+                        in
+                        ( { model
+                            | route = GameRoute <| WithBot difficulty
+                            , frontendGame = Just <| OfflineGame <| initialOfflineFrontendGame self (BotOpponent difficulty) botBegins
+                            , seed = newSeed
+                          }
+                        , Command.batch
+                            [ Audio.playSound ButtonClickSound
+                            , if botBegins then
+                                Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 100))
 
-                        BotBegins ->
-                            ( True, model.seed )
-
-                        RandomBegins ->
-                            Random.step Random.Extra.bool (model.seed |> Maybe.withDefault (Random.initialSeed 42))
-                                |> Tuple.mapSecond Just
-
-                self =
-                    if botIsPlaying then
-                        O
-
-                    else
-                        X
-            in
-            ( { model
-                | route = GameRoute <| WithBot difficulty
-                , frontendGame = Just <| initialFrontendGame (Just ( self, selfElo )) (BotOpponent difficulty) botIsPlaying
-                , seed = newSeed
-              }
-            , Command.batch
-                [ Audio.playSound ButtonClickSound
-                , if botIsPlaying then
-                    Effect.Task.perform (always BotMove) (Effect.Process.sleep (Duration.milliseconds 100))
-
-                  else
-                    Command.none
-                ]
-            )
+                              else
+                                Command.none
+                            ]
+                        )
+                    )
+                |> Maybe.withDefault ( model, Command.none )
 
         GotTime time ->
             ( { model | seed = Just <| Random.initialSeed (Effect.Time.posixToMillis time) }
@@ -322,8 +327,8 @@ update msg ({ localStorage } as model) =
 
         PlayForMeAgainstTheBotClicked ->
             case ( model.route, model.frontendGame ) of
-                ( GameRoute (WithBot _), Just frontendGame ) ->
-                    ( { model | frontendGame = Just { frontendGame | botIsPlaying = True } }
+                ( GameRoute (WithBot _), Just (OfflineGame frontendGame) ) ->
+                    ( { model | frontendGame = Just <| OfflineGame { frontendGame | botIsPlaying = True } }
                     , Command.batch
                         [ Effect.Task.perform (always PlayForMeAgainstTheBot) (Effect.Process.sleep (Duration.milliseconds 100))
                         , Audio.playSound (MoveSound frontendGame.currentPlayer)
@@ -335,7 +340,7 @@ update msg ({ localStorage } as model) =
 
         PlayForMeAgainstTheBot ->
             case ( model.route, model.frontendGame ) of
-                ( GameRoute (WithBot _), Just frontendGame ) ->
+                ( GameRoute (WithBot _), Just (OfflineGame frontendGame) ) ->
                     let
                         ( newModel, cmd ) =
                             case Bot.findBestMove frontendGame Elite of
@@ -347,7 +352,7 @@ update msg ({ localStorage } as model) =
                                         botIsPlaying =
                                             newFrontendGame.gameResult == Nothing
                                     in
-                                    ( { model | frontendGame = Just { newFrontendGame | botIsPlaying = botIsPlaying } }
+                                    ( { model | frontendGame = Just <| OfflineGame { newFrontendGame | botIsPlaying = botIsPlaying } }
                                     , if botIsPlaying then
                                         Command.batch
                                             [ moveCmd
@@ -392,45 +397,29 @@ update msg ({ localStorage } as model) =
         UndoMove ->
             model.frontendGame
                 |> Maybe.map
-                    (\frontendGame ->
-                        if frontendGame.currentMoveIndex >= 0 then
-                            let
-                                newIndex =
-                                    frontendGame.currentMoveIndex - 1
+                    (\f ->
+                        case f of
+                            OfflineGame offlineGame ->
+                                OfflineGame <| handleUndoMove offlineGame
 
-                                newFrontendGame =
-                                    reconstructBoardFromMoves frontendGame.moveHistory newIndex frontendGame
-                            in
-                            ( { model
-                                | frontendGame = Just newFrontendGame
-                              }
-                            , Command.none
-                            )
-
-                        else
-                            ( model, Command.none )
+                            OnlineGame onlineGame ->
+                                OnlineGame <| handleUndoMove onlineGame
                     )
+                |> Maybe.map (\newFrontendGame -> ( { model | frontendGame = Just newFrontendGame }, Command.none ))
                 |> Maybe.withDefault ( model, Command.none )
 
         RedoMove ->
             model.frontendGame
                 |> Maybe.map
                     (\frontendGame ->
-                        if frontendGame.currentMoveIndex < List.length frontendGame.moveHistory - 1 then
-                            let
-                                newIndex =
-                                    frontendGame.currentMoveIndex + 1
+                        case frontendGame of
+                            OfflineGame offlineGame ->
+                                OfflineGame <| handleRedoMove offlineGame
 
-                                newFrontendGame =
-                                    reconstructBoardFromMoves frontendGame.moveHistory newIndex frontendGame
-                            in
-                            ( { model | frontendGame = Just newFrontendGame }
-                            , Command.none
-                            )
-
-                        else
-                            ( model, Command.none )
+                            OnlineGame onlineGame ->
+                                OnlineGame <| handleRedoMove onlineGame
                     )
+                |> Maybe.map (\newFrontendGame -> ( { model | frontendGame = Just newFrontendGame }, Command.none ))
                 |> Maybe.withDefault ( model, Command.none )
 
         ToggleDarkMode ->
@@ -564,32 +553,32 @@ update msg ({ localStorage } as model) =
         ConfirmAbandon frontendGame ->
             ( { model
                 | showAbandonConfirm = False
-                , frontendGame = Just { frontendGame | gameResult = Just Lost }
+                , frontendGame = Just <| OnlineGame { frontendGame | gameResult = Just Lost }
               }
             , Command.batch
-                [ case frontendGame.id of
-                    Just gameId ->
-                        Effect.Lamdera.sendToBackend (AbandonGameToBackend gameId)
-
-                    Nothing ->
-                        Command.none
+                [ Effect.Lamdera.sendToBackend (AbandonGameToBackend frontendGame.id)
                 , Audio.playSound LoseSound
                 ]
             )
 
         StartTutorial ->
-            ( { model
-                | tutorialState = Just TutorialStep1
-                , frontendGame = Just (getTutorialBoard TutorialStep1)
-                , route = TutorialRoute
-                , rulesModalVisible = False
-              }
-            , Audio.playSound ButtonClickSound
-            )
+            model.self
+                |> Maybe.map
+                    (\self ->
+                        ( { model
+                            | tutorialState = Just TutorialStep1
+                            , frontendGame = Just <| OfflineGame <| getTutorialBoard self TutorialStep1
+                            , route = TutorialRoute
+                            , rulesModalVisible = False
+                          }
+                        , Audio.playSound ButtonClickSound
+                        )
+                    )
+                |> Maybe.withDefault ( model, Command.none )
 
         NextTutorialStep ->
-            case model.tutorialState of
-                Just tutorialState ->
+            Maybe.map2
+                (\tutorialState self ->
                     let
                         ( nextStep, soundCommand ) =
                             case tutorialState of
@@ -613,13 +602,14 @@ update msg ({ localStorage } as model) =
                     in
                     ( { model
                         | tutorialState = nextStep
-                        , frontendGame = Maybe.map getTutorialBoard nextStep
+                        , frontendGame = Maybe.map (getTutorialBoard self >> OfflineGame) nextStep
                       }
                     , soundCommand
                     )
-
-                _ ->
-                    ( model, Command.none )
+                )
+                model.tutorialState
+                model.self
+                |> Maybe.withDefault ( model, Command.none )
 
         CompleteTutorial ->
             ( { model
@@ -677,12 +667,51 @@ update msg ({ localStorage } as model) =
             )
 
 
-initialFrontendGame : Maybe ( Player, Int ) -> Opponent -> Bool -> FrontendGame
-initialFrontendGame self opponent botIsPlaying =
-    { id = Nothing
-    , self = self
+handleUndoMove : FrontendGameState a -> FrontendGameState a
+handleUndoMove frontendGame =
+    if frontendGame.currentMoveIndex >= 0 then
+        reconstructBoardFromMoves frontendGame.moveHistory (frontendGame.currentMoveIndex - 1) frontendGame
+
+    else
+        frontendGame
+
+
+handleRedoMove : FrontendGameState a -> FrontendGameState a
+handleRedoMove frontendGame =
+    if frontendGame.currentMoveIndex < List.length frontendGame.moveHistory - 1 then
+        reconstructBoardFromMoves frontendGame.moveHistory (frontendGame.currentMoveIndex + 1) frontendGame
+
+    else
+        frontendGame
+
+
+
+-- { opponent : OfflineOpponent
+-- , boards : List SmallBoard
+-- , currentPlayer : PlayerSide
+-- , self : Player
+-- , selfSide : PlayerSide
+-- , activeBoard : Maybe Int
+-- , lastMove : Maybe Move
+-- , moveHistory : List Move
+-- , currentMoveIndex : Int
+-- , winner : Maybe PlayerSide
+-- , gameResult : Maybe GameResult
+-- , botIsPlaying : Bool
+-- }
+
+
+initialOfflineFrontendGame : Player -> OfflineOpponent -> Bool -> FrontendOfflineGame
+initialOfflineFrontendGame self opponent botIsPlaying =
+    { self = self
     , boards = List.repeat 9 emptySmallBoard
     , currentPlayer = X
+    , selfSide =
+        if botIsPlaying then
+            O
+
+        else
+            X
     , activeBoard = Nothing
     , winner = Nothing
     , lastMove = Nothing
@@ -702,7 +731,7 @@ updateFromBackend msg model =
 
         OpponentLeftToFrontend frontendGame ->
             ( { model
-                | frontendGame = Just { frontendGame | gameResult = Just Won }
+                | frontendGame = Just <| OnlineGame <| { frontendGame | gameResult = Just Won }
               }
             , Audio.playSound WinSound
             )
@@ -711,26 +740,29 @@ updateFromBackend msg model =
             ( { model | backendModel = Just backendModel }, Command.none )
 
         SendGameToFrontend frontendGame ->
-            ( { model | frontendGame = Just frontendGame, route = GameRoute OnlineGameMode, inMatchmaking = False }, Command.none )
+            ( { model | frontendGame = Just <| OnlineGame frontendGame, route = GameRoute OnlineGameMode, inMatchmaking = False }, Command.none )
 
-        AlreadyInMatchmakingToFrontend ->
+        JoinMatchmakingToFrontend ->
             ( { model | inMatchmaking = True }, Command.none )
 
-        SendUserToFrontend maybeUser ->
-            case maybeUser of
-                Just user ->
-                    ( { model | login = Registered user }, Command.none )
+        LeftMatchmakingToFrontend ->
+            ( { model | inMatchmaking = False }, Command.none )
 
-                Nothing ->
-                    ( { model | login = NotLoggedIn }, Command.none )
+        SendUserToFrontend player ->
+            case player of
+                Authenticated user ->
+                    ( { model | login = Registered, self = Just <| Authenticated user }, Command.none )
+
+                Anonymous sessionId_ elo ->
+                    ( { model | login = NotLoggedIn, self = Just <| Anonymous sessionId_ elo }, Command.none )
 
         SignUpDone user ->
-            ( { model | login = Registered user, route = HomeRoute }
+            ( { model | login = Registered, self = Just <| Authenticated user, route = HomeRoute }
             , Command.none
             )
 
         SignInDone user ->
-            ( { model | login = Registered user, route = HomeRoute }
+            ( { model | login = Registered, self = Just <| Authenticated user, route = HomeRoute }
             , Command.none
             )
 
@@ -740,10 +772,10 @@ updateFromBackend msg model =
             )
 
         SendFinishedGameToFrontend frontendGame ->
-            ( { model | frontendGame = Just frontendGame }, Command.none )
+            ( { model | frontendGame = Just <| OnlineGame frontendGame }, Command.none )
 
 
-isValidMove : FrontendGame -> Move -> Bool
+isValidMove : FrontendGameState a -> Move -> Bool
 isValidMove frontendGame move =
     frontendGame.boards
         |> List.getAt move.boardIndex
@@ -761,18 +793,20 @@ isValidMove frontendGame move =
         |> Maybe.withDefault False
 
 
-handlePlayerMove : FrontendGame -> FrontendModel -> GameMode -> Move -> ( FrontendGame, Command FrontendOnly ToBackend FrontendMsg )
+handlePlayerMove : FrontendGameState a -> FrontendModel -> GameMode -> Move -> ( FrontendGameState a, Command FrontendOnly ToBackend FrontendMsg )
 handlePlayerMove frontendGame model gameMode move =
     let
+        newFrontendGame : FrontendGameState a
         newFrontendGame =
             makeMove frontendGame move frontendGame.currentPlayer
 
+        newGameResult : Maybe GameResult
         newGameResult =
             case model.route of
                 GameRoute (WithBot _) ->
                     case newFrontendGame.winner of
                         Just winner ->
-                            if (frontendGame.self |> Maybe.map Tuple.first) == Just winner then
+                            if frontendGame.selfSide == winner then
                                 Just Won
 
                             else
@@ -788,7 +822,7 @@ handlePlayerMove frontendGame model gameMode move =
                 GameRoute OnlineGameMode ->
                     case newFrontendGame.winner of
                         Just winner ->
-                            if (frontendGame.self |> Maybe.map Tuple.first) == Just winner then
+                            if frontendGame.selfSide == winner then
                                 Just Won
 
                             else
@@ -841,17 +875,12 @@ handlePlayerMove frontendGame model gameMode move =
                 )
 
             OnlineGameMode ->
-                case frontendGame.self of
-                    Just _ ->
-                        ( updatedFrontendGame
-                        , Command.batch
-                            [ soundCommand
-                            , Effect.Lamdera.sendToBackend <| MakeMoveToBackend move
-                            ]
-                        )
-
-                    Nothing ->
-                        ( updatedFrontendGame, soundCommand )
+                ( updatedFrontendGame
+                , Command.batch
+                    [ soundCommand
+                    , Effect.Lamdera.sendToBackend <| MakeMoveToBackend move
+                    ]
+                )
 
             WithFriend ->
                 ( updatedFrontendGame, soundCommand )
@@ -945,8 +974,11 @@ view model =
                     ( HomeRoute, _, _ ) ->
                         viewHome userConfig model
 
-                    ( TutorialRoute, Just frontendGame, Just tutorialState ) ->
+                    ( TutorialRoute, Just (OnlineGame frontendGame), Just tutorialState ) ->
                         Tutorial.View.viewGame userConfig frontendGame model tutorialState
+
+                    ( GameRoute OnlineGameMode, Just (OnlineGame frontendGame), _ ) ->
+                        viewGame userConfig model frontendGame OnlineGameMode
 
                     ( GameRoute mode, Just frontendGame, _ ) ->
                         viewGame userConfig model frontendGame mode
@@ -1071,14 +1103,14 @@ viewHome ({ t, c } as userConfig) model =
 
           else
             div []
-                [ case model.login of
-                    Registered user ->
+                [ case ( model.login, model.self ) of
+                    ( Registered, Just (Authenticated user) ) ->
                         div
                             [ style "font-size" "0.8em"
                             , style "margin-bottom" "10px"
                             , style "opacity" "0.8"
                             ]
-                            [ div [] [ text t.loggedInAs, text user.email ]
+                            [ div [] [ text t.loggedInAs, text user.name ]
                             , div [] [ text t.eloRating, text (String.fromInt user.elo) ]
                             ]
 
@@ -1091,7 +1123,7 @@ viewHome ({ t, c } as userConfig) model =
                 , viewGameButton userConfig (Dom.id "toggleRules") t.rulesTitle ToggleRulesModal
                 , viewGameButton userConfig (Dom.id "gameWithFriend") t.playWithFriend StartGameWithFriend
                 , case model.login of
-                    Registered _ ->
+                    Registered ->
                         viewGameButton userConfig (Dom.id "logout") t.logoutButton LogOut
 
                     _ ->
@@ -1105,7 +1137,7 @@ viewHome ({ t, c } as userConfig) model =
         ]
 
 
-viewGame : UserConfig -> FrontendModel -> FrontendGame -> GameMode -> Html FrontendMsg
+viewGame : UserConfig -> FrontendModel -> FrontendOnlineGame -> GameMode -> Html FrontendMsg
 viewGame ({ t, c } as userConfig) model frontendGame mode =
     let
         gameTitle =
@@ -1169,12 +1201,7 @@ viewGame ({ t, c } as userConfig) model frontendGame mode =
                 [ style "width" "min(100%, calc(100vh - 300px))"
                 , style "aspect-ratio" "1/1"
                 ]
-                [ case model.tutorialState of
-                    Just tutorialState ->
-                        Tutorial.View.viewBigBoardTutorial userConfig frontendGame tutorialState
-
-                    Nothing ->
-                        viewBigBoard userConfig frontendGame
+                [ viewBigBoard userConfig frontendGame
                 ]
             ]
         , div
@@ -1531,7 +1558,7 @@ viewDifficultyButton ({ t, c } as userConfig) model label difficulty =
         [ text label ]
 
 
-playerToString : Translation -> Player -> String
+playerToString : Translation -> PlayerSide -> String
 playerToString t player =
     case player of
         X ->
@@ -1541,7 +1568,7 @@ playerToString t player =
             t.playerO
 
 
-viewStatus : UserConfig -> FrontendGame -> GameMode -> Html FrontendMsg
+viewStatus : UserConfig -> FrontendOnlineGame -> GameMode -> Html FrontendMsg
 viewStatus ({ t, c } as userConfig) frontendGame mode =
     div
         [ style "margin" "10px 0"
@@ -1626,7 +1653,7 @@ viewStatus ({ t, c } as userConfig) frontendGame mode =
                 case frontendGame.self of
                     Just ( player, selfElo ) ->
                         case frontendGame.opponent of
-                            OnlineOpponent ( _, opponentElo ) ->
+                            OnlineOpponent opponent ->
                                 div
                                     [ style "display" "flex"
                                     , style "justify-content" "space-between"
@@ -1638,7 +1665,7 @@ viewStatus ({ t, c } as userConfig) frontendGame mode =
                                         ]
                                     , div []
                                         [ text t.eloRating
-                                        , text (String.fromInt opponentElo)
+                                        , text (String.fromInt opponent.elo)
                                         ]
                                     ]
 
@@ -1818,7 +1845,7 @@ refactoredVersionOfViewLanguageSelector { c } selectedLang lang =
         [ lang |> languageToString |> String.toUpper |> text ]
 
 
-viewBigBoard : UserConfig -> FrontendGame -> Html FrontendMsg
+viewBigBoard : UserConfig -> FrontendOnlineGame -> Html FrontendMsg
 viewBigBoard ({ t, c } as userConfig) frontendGame =
     let
         isBotTurn =
@@ -1871,7 +1898,7 @@ viewBigBoard ({ t, c } as userConfig) frontendGame =
         boardElements
 
 
-viewSmallBoard : UserConfig -> FrontendGame -> Int -> SmallBoard -> Html FrontendMsg
+viewSmallBoard : UserConfig -> FrontendOnlineGame -> Int -> SmallBoard -> Html FrontendMsg
 viewSmallBoard ({ t, c } as userConfig) frontendGame boardIndex smallBoardData =
     let
         isActive =
@@ -1949,7 +1976,7 @@ viewSmallBoard ({ t, c } as userConfig) frontendGame boardIndex smallBoardData =
         cellElements
 
 
-viewCell : UserConfig -> FrontendGame -> Int -> Bool -> List (Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
+viewCell : UserConfig -> FrontendOnlineGame -> Int -> Bool -> List (Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
 viewCell ({ t, c } as userConfig) frontendGame boardIndex isClickable cellStyles cellIndex cellState =
     let
         ( symbol, textColor ) =
@@ -2101,17 +2128,15 @@ subscriptions model =
         ]
 
 
-reconstructBoardFromMoves : List Move -> Int -> FrontendGame -> FrontendGame
+reconstructBoardFromMoves : List Move -> Int -> FrontendOnlineGame -> FrontendOnlineGame
 reconstructBoardFromMoves moves upToIndex initialBoardState =
     let
         movesToApply =
             List.take (upToIndex + 1) moves
 
-        freshBoard : FrontendGame
         freshBoard =
             { initialBoardState
                 | boards = List.repeat 9 emptySmallBoard
-                , botIsPlaying = initialBoardState.botIsPlaying
                 , currentMoveIndex = upToIndex
                 , activeBoard = Nothing
                 , lastMove = Nothing
@@ -2126,7 +2151,7 @@ reconstructBoardFromMoves moves upToIndex initialBoardState =
         movesToApply
 
 
-switchPlayer : Player -> Player
+switchPlayer : PlayerSide -> PlayerSide
 switchPlayer player =
     case player of
         X ->

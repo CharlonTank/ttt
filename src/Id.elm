@@ -4,7 +4,7 @@ module Id exposing
     , UserId(..)
     , display4CharsFromClientId
     , display4CharsFromSessionId
-    , display4CharsFromUUID
+    , display4CharsFromUUID, display4CharsFromId
     )
 
 import Effect.Lamdera exposing (ClientId, SessionId)
@@ -36,3 +36,8 @@ display4CharsFromClientId =
 display4CharsFromUUID : UUID -> String
 display4CharsFromUUID uuid =
     String.left 4 (UUID.toString uuid)
+
+
+display4CharsFromId : Id a -> String
+display4CharsFromId (Id uuid) =
+    display4CharsFromUUID uuid

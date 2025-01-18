@@ -12,7 +12,8 @@ module GameLogic exposing
     )
 
 import List.Extra as List
-import Types exposing (CellState(..), FrontendGame, GameResult(..), Move, OnlineGame, Player(..), SmallBoard)
+import Types exposing (CellState(..), FrontendOnlineGame, GameResult(..), Move, OnlineGameBackend, PlayerSide(..), SmallBoard)
+import Types exposing (FrontendGameState)
 
 
 emptySmallBoard : SmallBoard
@@ -32,7 +33,7 @@ isSmallBoardActive activeBoardIndex boardIndex board =
             index == boardIndex
 
 
-isValidMove : OnlineGame -> Int -> Int -> Bool
+isValidMove : OnlineGameBackend -> Int -> Int -> Bool
 isValidMove game boardIndex cellIndex =
     case game.winner of
         Just _ ->
@@ -49,7 +50,7 @@ isValidMove game boardIndex cellIndex =
             targetBoard.winner == Nothing && targetCell == Empty
 
 
-makeMove : FrontendGame -> Move -> Player -> FrontendGame
+makeMove : FrontendGameState a -> Move -> PlayerSide -> FrontendGameState a
 makeMove game move currentPlayer =
     if game.winner /= Nothing || game.gameResult == Just Draw then
         game
@@ -108,7 +109,7 @@ makeMove game move currentPlayer =
         }
 
 
-nextPlayer : Player -> Player
+nextPlayer : PlayerSide -> PlayerSide
 nextPlayer player =
     case player of
         X ->
@@ -141,7 +142,7 @@ winningCombinations =
     ]
 
 
-checkSmallBoardWinner : List CellState -> Maybe Player
+checkSmallBoardWinner : List CellState -> Maybe PlayerSide
 checkSmallBoardWinner cells =
     List.filterMap
         (\indices ->
@@ -160,7 +161,7 @@ checkSmallBoardWinner cells =
         |> List.head
 
 
-checkBigBoardWinner : List SmallBoard -> Maybe Player
+checkBigBoardWinner : List SmallBoard -> Maybe PlayerSide
 checkBigBoardWinner boards =
     let
         getWinner index =
@@ -182,7 +183,7 @@ checkBigBoardWinner boards =
         |> List.head
 
 
-getAllAvailableMoves : OnlineGame -> List ( Int, Int )
+getAllAvailableMoves : OnlineGameBackend -> List ( Int, Int )
 getAllAvailableMoves game =
     let
         validBoardIndexes =

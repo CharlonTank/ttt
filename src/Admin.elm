@@ -254,16 +254,34 @@ viewCode c content =
         [ text content ]
 
 
-viewMatchmakingQueue : Theme -> List SessionId -> Html FrontendMsg
+viewMatchmakingQueue : Theme -> List Player -> Html FrontendMsg
 viewMatchmakingQueue c queue =
     viewTable c
-        { headers = [ "Player ID" ]
-        , rows = List.map (\sessionId -> [ viewCode c (display4CharsFromSessionId sessionId) ]) queue
+        { headers = [ "Position", "Player", "Type" ]
+        , rows =
+            List.indexedMap
+                (\index player ->
+                    [ text (String.fromInt (index + 1))
+                    , case player of
+                        Authenticated publicUser ->
+                            viewCode c publicUser.name
+
+                        Anonymous sessionId _ ->
+                            viewCode c (display4CharsFromSessionId sessionId)
+                    , case player of
+                        Authenticated _ ->
+                            text "Authenticated"
+
+                        Anonymous _ _ ->
+                            text "Anonymous"
+                    ]
+                )
+                queue
         , emptyMessage = "No players in queue"
         }
 
 
-viewActiveGames : Theme -> SeqDict (Id GameId) OnlineGame -> Html FrontendMsg
+viewActiveGames : Theme -> SeqDict (Id GameId) OnlineGameBackend -> Html FrontendMsg
 viewActiveGames c games =
     viewTable c
         { headers = [ "ID", "P1", "P2" ]
@@ -272,15 +290,19 @@ viewActiveGames c games =
                 |> List.map
                     (\( Id gameId, game ) ->
                         [ viewCode c (display4CharsFromUUID gameId)
-                        , viewCode c (display4CharsFromSessionId game.playerX)
-                        , viewCode c (display4CharsFromSessionId game.playerO)
+                        , case game.playerX of
+                            Authenticated user -> viewCode c user.name
+                            Anonymous sessionId _ -> viewCode c (display4CharsFromSessionId sessionId)
+                        , case game.playerO of
+                            Authenticated user -> viewCode c user.name
+                            Anonymous sessionId _ -> viewCode c (display4CharsFromSessionId sessionId)
                         ]
                     )
         , emptyMessage = "No active games"
         }
 
 
-viewFinishedGames : Theme -> SeqDict (Id GameId) OnlineGame -> Html FrontendMsg
+viewFinishedGames : Theme -> SeqDict (Id GameId) OnlineGameBackend -> Html FrontendMsg
 viewFinishedGames c games =
     viewTable c
         { headers = [ "ID", "P1", "P2", "State" ]
@@ -289,8 +311,12 @@ viewFinishedGames c games =
                 |> List.map
                     (\( Id gameId, game ) ->
                         [ viewCode c (display4CharsFromUUID gameId)
-                        , viewCode c (display4CharsFromSessionId game.playerX)
-                        , viewCode c (display4CharsFromSessionId game.playerO)
+                        , case game.playerX of
+                            Authenticated user -> viewCode c user.name
+                            Anonymous sessionId _ -> viewCode c (display4CharsFromSessionId sessionId)
+                        , case game.playerO of
+                            Authenticated user -> viewCode c user.name
+                            Anonymous sessionId _ -> viewCode c (display4CharsFromSessionId sessionId)
                         , viewGameStatus game
                         ]
                     )
@@ -298,7 +324,7 @@ viewFinishedGames c games =
         }
 
 
-viewGameStatus : OnlineGame -> Html msg
+viewGameStatus : OnlineGameBackend -> Html msg
 viewGameStatus game =
     div
         [ style "display" "inline-block"
@@ -358,7 +384,7 @@ viewSessions c sessions =
         }
 
 
-playerToString : Player -> String
+playerToString : PlayerSide -> String
 playerToString player =
     case player of
         X ->

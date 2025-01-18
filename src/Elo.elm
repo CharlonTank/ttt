@@ -2,12 +2,14 @@ module Elo exposing
     ( calculateNewRating
     , expectedScore
     , kFactor
-    , updateEloRatings
+    , updateEloRatings, getEloRating, updateEloRating
     )
 
 {-| Calculate the expected score for a player based on their rating and their opponent's rating.
 The expected score is a number between 0 and 1 representing the probability of winning.
 -}
+import Types exposing (Player)
+import Types exposing (Player(..))
 
 
 expectedScore : Int -> Int -> Float
@@ -70,3 +72,23 @@ updateEloRatings { winner, loser, isDraw } =
         ( calculateNewRating winner loser 1.0
         , calculateNewRating loser winner 0.0
         )
+
+getEloRating : Player -> Int
+getEloRating player =
+    case player of
+        Authenticated publicUser ->
+            publicUser.elo
+
+        Anonymous _ elo ->
+            elo
+
+
+
+updateEloRating : Player -> Int -> Player
+updateEloRating player elo =
+    case player of
+        Authenticated publicUser ->
+            Authenticated { publicUser | elo = elo }
+
+        Anonymous sessionId _ ->
+            Anonymous sessionId elo

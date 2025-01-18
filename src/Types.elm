@@ -15,19 +15,19 @@ import Tutorial.Types exposing (TutorialStep)
 import Url exposing (Url)
 
 
-type Player
+type PlayerSide
     = X
     | O
 
 
 type CellState
     = Empty
-    | Filled Player
+    | Filled PlayerSide
 
 
 type alias SmallBoard =
     { cells : List CellState
-    , winner : Maybe Player
+    , winner : Maybe PlayerSide
     }
 
 
@@ -74,7 +74,7 @@ type LoginState
     = NotLoggedIn
     | WaitingForAnswer
     | LoginError LoginErrorWrapper
-    | Registered PublicUser
+    | Registered
 
 
 type alias FrontendModel =
@@ -83,6 +83,7 @@ type alias FrontendModel =
     , localStorage : LocalStorage
     , seed : Maybe Random.Seed
     , login : LoginState
+    , self : Maybe Player
     , rulesModalVisible : Bool
     , frClickCount : Int
     , debuggerVisible : Bool
@@ -111,70 +112,113 @@ type alias UserConfig =
     }
 
 
-type alias OnlineGame =
+type alias OnlineGameBackend =
     { id : Id GameId
-    , playerX : SessionId
-    , playerO : SessionId
+    , playerX : Player
+    , playerO : Player
     , boards : List SmallBoard
-    , currentPlayer : Player
+    , currentPlayer : PlayerSide
     , activeBoard : Maybe Int
-    , winner : Maybe Player
+    , winner : Maybe PlayerSide
     , lastMove : Maybe Move
     , moveHistory : List Move
     , currentMoveIndex : Int
-    , eloX : Int
-    , eloO : Int
     }
 
 
-type Opponent
-    = OnlineOpponent ( SessionId, Int )
-    | BotOpponent BotDifficulty
+type OfflineOpponent
+    = BotOpponent BotDifficulty
     | FriendOpponent
 
 
-type alias FrontendGame =
-    { id : Maybe (Id GameId)
-    , opponent : Opponent
+type FrontendGame
+    = OnlineGame FrontendOnlineGame
+    | OfflineGame FrontendOfflineGame
+
+
+type alias FrontendGameState state =
+    { state
+        | boards : List SmallBoard
+        , currentPlayer : PlayerSide
+        , self : Player
+        , selfSide : PlayerSide
+        , winner : Maybe PlayerSide
+        , gameResult : Maybe GameResult
+        , activeBoard : Maybe Int
+        , lastMove : Maybe Move
+        , moveHistory : List Move
+        , currentMoveIndex : Int
+    }
+
+
+type alias FrontendOnlineGame =
+    { id : Id GameId
+    , opponent : Player
     , boards : List SmallBoard
-    , currentPlayer : Player
-    , self : Maybe ( Player, Int )
+    , currentPlayer : PlayerSide
+    , self : Player
+    , selfSide : PlayerSide
     , activeBoard : Maybe Int
     , lastMove : Maybe Move
     , moveHistory : List Move
     , currentMoveIndex : Int
-    , winner : Maybe Player
+    , winner : Maybe PlayerSide
+    , gameResult : Maybe GameResult
+    }
+
+
+type alias FrontendOfflineGame =
+    { opponent : OfflineOpponent
+    , boards : List SmallBoard
+    , currentPlayer : PlayerSide
+    , self : Player
+    , selfSide : PlayerSide
+    , activeBoard : Maybe Int
+    , lastMove : Maybe Move
+    , moveHistory : List Move
+    , currentMoveIndex : Int
+    , winner : Maybe PlayerSide
     , gameResult : Maybe GameResult
     , botIsPlaying : Bool
     }
 
 
 type alias User =
-    { email : Email
+    { id : Id UserId
+    , email : Email
     , name : String
     , encryptedPassword : String
-    , elo : Int
+    , elo : Elo
     }
 
 
 type alias PublicUser =
-    { email : Email
+    { id : Id UserId
     , name : String
-    , elo : Int
+    , elo : Elo
     }
 
 
 type alias Session =
-    { email : Maybe Email
+    { userId : Maybe (Id UserId)
+    , email : Maybe Email
     , clientIds : List ClientId
-    , elo : Int
     }
 
 
+type alias Elo =
+    Int
+
+
+type Player
+    = Authenticated PublicUser
+    | Anonymous SessionId Elo
+
+
 type alias BackendModel =
-    { matchmakingQueue : List SessionId
-    , activeGames : SeqDict (Id GameId) OnlineGame
-    , finishedGames : SeqDict (Id GameId) OnlineGame
+    { matchmakingQueue : List Player
+    , activeGames : SeqDict (Id GameId) OnlineGameBackend
+    , finishedGames : SeqDict (Id GameId) OnlineGameBackend
     , seed : Random.Seed
     , sessions : SeqDict SessionId Session
     , users : SeqDict Email User
@@ -220,7 +264,7 @@ type FrontendMsg
     | Tick Effect.Time.Posix
     | ShowAbandonConfirm
     | HideAbandonConfirm
-    | ConfirmAbandon FrontendGame
+    | ConfirmAbandon FrontendOnlineGame
     | StartTutorial
     | NextTutorialStep
     | CompleteTutorial
@@ -271,12 +315,13 @@ type BackendMsg
 
 type ToFrontend
     = NoOpToFrontend
-    | OpponentLeftToFrontend FrontendGame
+    | OpponentLeftToFrontend FrontendOnlineGame
     | BackendModelReceivedToFrontend BackendModel
-    | SendGameToFrontend FrontendGame
-    | SendFinishedGameToFrontend FrontendGame
-    | AlreadyInMatchmakingToFrontend
-    | SendUserToFrontend (Maybe PublicUser)
+    | SendGameToFrontend FrontendOnlineGame
+    | SendFinishedGameToFrontend FrontendOnlineGame
+    | JoinMatchmakingToFrontend
+    | LeftMatchmakingToFrontend
+    | SendUserToFrontend Player
     | SignUpDone PublicUser
     | SignInDone PublicUser
     | WrongPassword LoginErrorWrapper

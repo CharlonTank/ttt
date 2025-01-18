@@ -5,7 +5,7 @@ import List.Extra as List
 import Types exposing (..)
 
 
-findBestMove : FrontendGame -> BotDifficulty -> Maybe Move
+findBestMove : FrontendGameState a -> BotDifficulty -> Maybe Move
 findBestMove game difficulty =
     let
         availableMoves =
@@ -100,7 +100,7 @@ findBestMove game difficulty =
     bestMove
 
 
-alphabeta : FrontendGame -> Int -> Int -> Int -> Bool -> Int
+alphabeta : FrontendGameState a -> Int -> Int -> Int -> Bool -> Int
 alphabeta game depth alpha beta isMaximizing =
     case game.winner of
         Just winner ->
@@ -121,7 +121,7 @@ alphabeta game depth alpha beta isMaximizing =
                 alphabetaMin game depth alpha beta
 
 
-alphabetaMax : FrontendGame -> Int -> Int -> Int -> Int
+alphabetaMax : FrontendGameState a -> Int -> Int -> Int -> Int
 alphabetaMax game depth alpha beta =
     let
         availableMoves =
@@ -156,7 +156,7 @@ alphabetaMax game depth alpha beta =
     helper availableMoves alpha -10000
 
 
-alphabetaMin : FrontendGame -> Int -> Int -> Int -> Int
+alphabetaMin : FrontendGameState a -> Int -> Int -> Int -> Int
 alphabetaMin game depth alpha beta =
     let
         helper moves currentBeta bestScore =
@@ -188,7 +188,7 @@ alphabetaMin game depth alpha beta =
     helper (getAllAvailableMoves game) beta 10000
 
 
-evaluatePosition : FrontendGame -> Player -> Int
+evaluatePosition : FrontendGameState a -> PlayerSide -> Int
 evaluatePosition game forPlayer =
     let
         evaluateSmallBoard : SmallBoard -> Int
@@ -345,7 +345,7 @@ evaluatePosition game forPlayer =
     List.sum boardScores + centerBoardBonus + cornerBoardsBonus + strategicBonus
 
 
-getAllAvailableMoves : FrontendGame -> List Move
+getAllAvailableMoves : FrontendGameState a -> List Move
 getAllAvailableMoves game =
     let
         validBoardIndexes =
@@ -365,7 +365,7 @@ getAllAvailableMoves game =
         |> List.filter isValidBoardAndCell
 
 
-isValidMove : FrontendGame -> Move -> Bool
+isValidMove : FrontendGameState a -> Move -> Bool
 isValidMove game move =
     case game.winner of
         Just _ ->

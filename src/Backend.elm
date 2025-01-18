@@ -6,8 +6,8 @@ import Effect.Lamdera exposing (ClientId, SessionId, broadcast, sendToFrontends)
 import Effect.Subscription as Subscription exposing (Subscription)
 import Effect.Task
 import Effect.Time
-import Elo
-import GameLogic exposing (checkBigBoardWinner, checkSmallBoardWinner, isBigBoardComplete, isSmallBoardComplete)
+import Elo exposing (getEloRating, updateEloRating)
+import GameLogic exposing (checkBigBoardWinner, checkSmallBoardWinner, emptySmallBoard, isBigBoardComplete, isSmallBoardComplete)
 import Id exposing (GameId(..), Id(..))
 import Lamdera
 import List.Extra
@@ -24,7 +24,7 @@ hashPassword password =
 
 toPublicUser : User -> PublicUser
 toPublicUser user =
-    { email = user.email
+    { id = user.id
     , name = user.name
     , elo = user.elo
     }
@@ -80,11 +80,11 @@ update msg model =
                         |> Dict.update sessionId
                             (\mbSession ->
                                 case mbSession of
-                                    Nothing ->
-                                        Just { email = Nothing, clientIds = [ clientId ], elo = 1000 }
-
                                     Just session ->
                                         Just { session | clientIds = clientId :: session.clientIds }
+
+                                    Nothing ->
+                                        Just { userId = Nothing, email = Nothing, clientIds = [ clientId ] }
                             )
 
                 maybeCurrentUser : Maybe PublicUser
@@ -94,20 +94,23 @@ update msg model =
                         |> Maybe.andThen
                             (.email >> Maybe.andThen (\email -> Dict.get email model.users))
                         |> Maybe.map toPublicUser
+
+                player =
+                    getPlayer sessionId model
             in
-            (if List.member sessionId model.matchmakingQueue then
+            (if List.any (\p -> p == player) model.matchmakingQueue then
                 ( model
-                , Effect.Lamdera.sendToFrontend clientId AlreadyInMatchmakingToFrontend
+                , Effect.Lamdera.sendToFrontend clientId JoinMatchmakingToFrontend
                 )
 
              else
                 let
                     fGame =
                         model.activeGames
-                            |> Dict.filter (\_ g -> g.playerX == sessionId || g.playerO == sessionId)
+                            |> Dict.filter (\_ g -> g.playerX == player || g.playerO == player)
                             |> Dict.values
                             |> List.head
-                            |> Maybe.map (\g -> toFrontendGame ( sessionId, Dict.get sessionId model.sessions |> Maybe.map .elo |> Maybe.withDefault 1000 ) g)
+                            |> Maybe.map (\g -> toFrontendOnlineGame player g)
                 in
                 case fGame of
                     Just game ->
@@ -131,52 +134,75 @@ update msg model =
 
         ClientDisconnected sessionId clientId ->
             let
+                player =
+                    getPlayer sessionId model
+
+                -- Update the session's clientIds, removing it if empty and anonymous
                 updatedSessions =
-                    Dict.updateIfExists sessionId
-                        (\session ->
-                            { session | clientIds = List.filter ((/=) clientId) session.clientIds }
-                        )
-                        model.sessions
+                    model.sessions
+                        |> Dict.update sessionId
+                            (\maybeSession ->
+                                maybeSession
+                                    |> Maybe.andThen
+                                        (\session ->
+                                            let
+                                                newClientIds =
+                                                    List.filter ((/=) clientId) session.clientIds
+                                            in
+                                            case session.email of
+                                                Just _ ->
+                                                    -- Keep session for authenticated users even if empty
+                                                    Just { session | clientIds = newClientIds }
 
-                isLastClient =
-                    case Dict.get sessionId updatedSessions of
-                        Nothing ->
-                            True
+                                                Nothing ->
+                                                    -- Remove session for anonymous users if empty
+                                                    if List.isEmpty newClientIds then
+                                                        Nothing
 
-                        Just session ->
-                            List.isEmpty session.clientIds
+                                                    else
+                                                        Just { session | clientIds = newClientIds }
+                                        )
+                            )
+
+                updatedModel =
+                    { model | sessions = updatedSessions }
+
+                shouldDisconnectFromGame =
+                    case player of
+                        Authenticated _ ->
+                            False
+
+                        -- Never disconnect authenticated users
+                        Anonymous _ _ ->
+                            -- For anonymous: check if their only session is gone
+                            Dict.get sessionId updatedSessions == Nothing
             in
-            if isLastClient then
-                let
-                    updatedModel =
-                        { model
-                            | sessions = updatedSessions
-                            , matchmakingQueue = List.filter ((/=) sessionId) model.matchmakingQueue
-                        }
-                in
-                if isPlayerInGame sessionId updatedModel then
-                    disconnectFromGame sessionId updatedModel
-
-                else
-                    ( updatedModel, Command.none )
+            if shouldDisconnectFromGame && isPlayerInGame player model then
+                disconnectFromGame sessionId player model
 
             else
-                ( { model | sessions = updatedSessions }, Command.none )
+                ( updatedModel, Command.none )
 
 
-toFrontendGame : ( SessionId, Int ) -> OnlineGame -> FrontendGame
-toFrontendGame ( sessionId, elo ) game =
+toFrontendOnlineGame : Player -> OnlineGameBackend -> FrontendOnlineGame
+toFrontendOnlineGame self game =
     let
-        ( self, opponent ) =
-            if game.playerX == sessionId then
-                ( ( X, elo ), OnlineOpponent ( game.playerO, game.eloO ) )
+        selfSide =
+            if game.playerX == self then
+                X
 
             else
-                ( ( O, elo ), OnlineOpponent ( game.playerX, game.eloX ) )
+                O
     in
-    { id = Just game.id
-    , self = Just self
-    , opponent = opponent
+    { id = game.id
+    , self = self
+    , opponent =
+        if selfSide == X then
+            game.playerO
+
+        else
+            game.playerX
+    , selfSide = selfSide
     , boards = game.boards
     , currentPlayer = game.currentPlayer
     , activeBoard = game.activeBoard
@@ -185,8 +211,15 @@ toFrontendGame ( sessionId, elo ) game =
     , currentMoveIndex = game.currentMoveIndex
     , gameResult =
         case game.winner of
-            Just _ ->
-                if self == ( X, elo ) then
+            Just X ->
+                if selfSide == X then
+                    Just Won
+
+                else
+                    Just Lost
+
+            Just O ->
+                if selfSide == O then
                     Just Won
 
                 else
@@ -198,121 +231,98 @@ toFrontendGame ( sessionId, elo ) game =
 
                 else
                     Nothing
-    , botIsPlaying = False
     , winner = game.winner
     }
 
 
-isPlayerInGame : SessionId -> BackendModel -> Bool
-isPlayerInGame sessionId model =
+isPlayerInGame : Player -> BackendModel -> Bool
+isPlayerInGame player model =
     Dict.toList model.activeGames
         |> List.any
             (\( _, game ) ->
-                game.playerX == sessionId || game.playerO == sessionId
+                game.playerX == player || game.playerO == player
             )
 
 
-handleGameAbandon : Id GameId -> SessionId -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
-handleGameAbandon gameId sessionId model =
+handleGameAbandon : SessionId -> Id GameId -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
+handleGameAbandon sessionId gameId model =
+    let
+        player =
+            getPlayer sessionId model
+    in
     case Dict.get gameId model.activeGames of
         Nothing ->
             ( model, Command.none )
 
         Just game ->
-            if game.playerX /= sessionId && game.playerO /= sessionId then
+            if game.playerX /= player && game.playerO /= player then
                 ( model, Command.none )
 
             else
                 let
                     -- Determine winner and loser
                     players =
-                        if game.playerX == sessionId then
-                            { winnerSession = game.playerO
-                            , winnerElo = game.eloO
-                            , loserSession = game.playerX
-                            , loserElo = game.eloX
+                        if game.playerX == player then
+                            { winner = game.playerO
+                            , loser = game.playerX
                             }
 
                         else
-                            { winnerSession = game.playerX
-                            , winnerElo = game.eloX
-                            , loserSession = game.playerO
-                            , loserElo = game.eloO
+                            { winner = game.playerX
+                            , loser = game.playerO
                             }
 
                     -- Calculate ELO changes using Elo module
                     ( newWinnerElo, newLoserElo ) =
                         Elo.updateEloRatings
-                            { winner = players.winnerElo
-                            , loser = players.loserElo
+                            { winner = getEloRating players.winner
+                            , loser = getEloRating players.loser
                             , isDraw = False
                             }
 
-                    -- Update sessions with new ELO ratings
-                    updatedSessions =
-                        model.sessions
-                            |> Dict.update players.winnerSession
-                                (\mbSession ->
-                                    case mbSession of
-                                        Just session ->
-                                            Just { session | elo = newWinnerElo }
-
-                                        Nothing ->
-                                            Nothing
-                                )
-                            |> Dict.update players.loserSession
-                                (\mbSession ->
-                                    case mbSession of
-                                        Just session ->
-                                            Just { session | elo = newLoserElo }
-
-                                        Nothing ->
-                                            Nothing
-                                )
-
+                    -- Update game with new ELO ratings
                     updatedGame =
-                        if game.playerX == sessionId then
+                        if game.playerX == player then
                             { game
                                 | winner = Just O
-                                , eloO = newWinnerElo
-                                , eloX = newLoserElo
+                                , playerX = updateEloRating game.playerX newLoserElo
+                                , playerO = updateEloRating game.playerO newWinnerElo
                             }
 
                         else
                             { game
                                 | winner = Just X
-                                , eloX = newWinnerElo
-                                , eloO = newLoserElo
+                                , playerX = updateEloRating game.playerX newWinnerElo
+                                , playerO = updateEloRating game.playerO newLoserElo
                             }
 
                     command =
-                        if game.playerX == sessionId then
+                        if game.playerX == player then
                             Command.batch
-                                [ Effect.Lamdera.sendToFrontends game.playerO (OpponentLeftToFrontend (toFrontendGame ( game.playerO, newWinnerElo ) updatedGame))
-                                , Effect.Lamdera.sendToFrontends game.playerX (OpponentLeftToFrontend (toFrontendGame ( game.playerX, newLoserElo ) updatedGame))
+                                [ sendToClientsFromPlayer game.playerO (OpponentLeftToFrontend (toFrontendOnlineGame game.playerO updatedGame)) model
+                                , sendToClientsFromPlayer game.playerX (OpponentLeftToFrontend (toFrontendOnlineGame game.playerX updatedGame)) model
                                 ]
 
                         else
                             Command.batch
-                                [ Effect.Lamdera.sendToFrontends game.playerX (OpponentLeftToFrontend (toFrontendGame ( game.playerX, newWinnerElo ) updatedGame))
-                                , Effect.Lamdera.sendToFrontends game.playerO (OpponentLeftToFrontend (toFrontendGame ( game.playerO, newLoserElo ) updatedGame))
+                                [ sendToClientsFromPlayer game.playerX (OpponentLeftToFrontend (toFrontendOnlineGame game.playerX updatedGame)) model
+                                , sendToClientsFromPlayer game.playerO (OpponentLeftToFrontend (toFrontendOnlineGame game.playerO updatedGame)) model
                                 ]
                 in
                 ( { model
                     | activeGames = Dict.remove gameId model.activeGames
                     , finishedGames = Dict.insert gameId updatedGame model.finishedGames
-                    , sessions = updatedSessions
                   }
                 , command
                 )
 
 
-disconnectFromGame : SessionId -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
-disconnectFromGame sessionId model =
+disconnectFromGame : SessionId -> Player -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
+disconnectFromGame sessionId player model =
     let
         maybeGameId =
             Dict.toList model.activeGames
-                |> List.Extra.find (\( _, game ) -> game.playerX == sessionId || game.playerO == sessionId)
+                |> List.Extra.find (\( _, game ) -> game.playerX == player || game.playerO == player)
                 |> Maybe.map Tuple.first
     in
     case maybeGameId of
@@ -320,7 +330,7 @@ disconnectFromGame sessionId model =
             ( model, Command.none )
 
         Just gameId ->
-            handleGameAbandon gameId sessionId model
+            handleGameAbandon sessionId gameId model
 
 
 updateFromFrontend : SessionId -> ClientId -> ToBackend -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
@@ -336,7 +346,7 @@ updateFromFrontend sessionId clientId msg model =
             handleLeaveMatchmaking sessionId clientId model
 
         AbandonGameToBackend gameId ->
-            handleGameAbandon gameId sessionId model
+            handleGameAbandon sessionId gameId model
 
         MakeMoveToBackend move ->
             handleMakeMove sessionId clientId move model
@@ -355,23 +365,12 @@ updateFromFrontend sessionId clientId msg model =
                         let
                             updatedSessions =
                                 model.sessions
-                                    |> Dict.update sessionId
+                                    |> Dict.updateIfExists sessionId
                                         (\maybeSession ->
-                                            Just
-                                                { email = Just email
-                                                , clientIds =
-                                                    case maybeSession of
-                                                        Just session ->
-                                                            if List.member clientId session.clientIds then
-                                                                session.clientIds
-
-                                                            else
-                                                                clientId :: session.clientIds
-
-                                                        Nothing ->
-                                                            [ clientId ]
-                                                , elo = user.elo
-                                                }
+                                            { maybeSession
+                                                | email = Just email
+                                                , userId = Just user.id
+                                            }
                                         )
                         in
                         ( { model | sessions = updatedSessions }
@@ -394,8 +393,13 @@ updateFromFrontend sessionId clientId msg model =
                             hashedPassword =
                                 hashPassword password
 
+                            ( newUserId, newSeed ) =
+                                Random.step UUID.generator model.seed
+
+                            newUser : User
                             newUser =
-                                { email = email
+                                { id = Id newUserId
+                                , email = email
                                 , name = "Player " ++ String.left 5 email
                                 , encryptedPassword = hashedPassword
                                 , elo = 1000
@@ -405,29 +409,19 @@ updateFromFrontend sessionId clientId msg model =
                                 Dict.insert email newUser model.users
 
                             updatedSessions =
-                                Dict.update sessionId
-                                    (\maybeSession ->
-                                        Just
-                                            { email = Just email
-                                            , clientIds =
-                                                case maybeSession of
-                                                    Just session ->
-                                                        if List.member clientId session.clientIds then
-                                                            session.clientIds
-
-                                                        else
-                                                            clientId :: session.clientIds
-
-                                                    Nothing ->
-                                                        [ clientId ]
-                                            , elo = 1000
+                                model.sessions
+                                    |> Dict.updateIfExists sessionId
+                                        (\maybeSession ->
+                                            { maybeSession
+                                                | email = Just email
+                                                , userId = Just (Id newUserId)
                                             }
-                                    )
-                                    model.sessions
+                                        )
                         in
                         ( { model
                             | users = updatedUsers
                             , sessions = updatedSessions
+                            , seed = newSeed
                           }
                         , Effect.Lamdera.sendToFrontend clientId (SignUpDone (toPublicUser newUser))
                         )
@@ -437,12 +431,11 @@ updateFromFrontend sessionId clientId msg model =
                 updatedSessions =
                     Dict.update sessionId
                         (\maybeSession ->
-                            case maybeSession of
-                                Just session ->
-                                    Just { session | email = Nothing }
-
-                                Nothing ->
-                                    Nothing
+                            maybeSession
+                                |> Maybe.map
+                                    (\session ->
+                                        { session | email = Nothing, userId = Nothing }
+                                    )
                         )
                         model.sessions
 
@@ -462,13 +455,33 @@ updateFromFrontend sessionId clientId msg model =
 
 handleJoinMatchmaking : SessionId -> ClientId -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
 handleJoinMatchmaking sessionId _ model =
-    if List.member sessionId model.matchmakingQueue then
-        ( model, Command.none )
+    let
+        player =
+            getPlayer sessionId model
+    in
+    if
+        List.any
+            (\p ->
+                case p of
+                    Authenticated publicUser ->
+                        case Dict.get sessionId model.sessions |> Maybe.andThen .userId of
+                            Just userId ->
+                                userId == publicUser.id
+
+                            Nothing ->
+                                False
+
+                    Anonymous sid _ ->
+                        sid == sessionId
+            )
+            model.matchmakingQueue
+    then
+        ( model, sendToClientsFromSessionId sessionId JoinMatchmakingToFrontend model )
 
     else
         let
             newQueue =
-                sessionId :: model.matchmakingQueue
+                player :: model.matchmakingQueue
         in
         case newQueue of
             player1 :: player2 :: rest ->
@@ -486,9 +499,27 @@ handleJoinMatchmaking sessionId _ model =
                     ( gameUuid, newSeed2 ) =
                         Random.step UUID.generator newSeed1
 
-                    newGame : OnlineGame
+                    getSessionId p =
+                        case p of
+                            Authenticated publicUser ->
+                                Dict.toList model.sessions
+                                    |> List.filter (\( _, session ) -> session.userId == Just publicUser.id)
+                                    |> List.head
+                                    |> Maybe.map Tuple.first
+                                    |> Maybe.withDefault sessionId
+
+                            Anonymous sid _ ->
+                                sid
+
+                    firstPlayerSessionId =
+                        getSessionId firstPlayer
+
+                    secondPlayerSessionId =
+                        getSessionId secondPlayer
+
+                    newGame : OnlineGameBackend
                     newGame =
-                        initialOnlineGame (Id gameUuid) firstPlayer secondPlayer model
+                        initialOnlineGame (Id gameUuid) firstPlayer secondPlayer
 
                     newModel =
                         { model
@@ -499,30 +530,19 @@ handleJoinMatchmaking sessionId _ model =
                 in
                 ( newModel
                 , Command.batch
-                    [ Effect.Lamdera.sendToFrontends secondPlayer (SendGameToFrontend (toFrontendGame ( secondPlayer, newGame.eloO ) newGame))
-                    , Effect.Lamdera.sendToFrontends firstPlayer (SendGameToFrontend (toFrontendGame ( firstPlayer, newGame.eloX ) newGame))
+                    [ sendToClientsFromSessionId firstPlayerSessionId (SendGameToFrontend (toFrontendOnlineGame firstPlayer newGame)) newModel
+                    , sendToClientsFromSessionId secondPlayerSessionId (SendGameToFrontend (toFrontendOnlineGame secondPlayer newGame)) newModel
                     ]
                 )
 
             _ ->
                 ( { model | matchmakingQueue = newQueue }
-                , Command.none
+                , sendToClientsFromSessionId sessionId JoinMatchmakingToFrontend model
                 )
 
 
-initialOnlineGame : Id GameId -> SessionId -> SessionId -> BackendModel -> OnlineGame
-initialOnlineGame id firstPlayer secondPlayer model =
-    let
-        firstPlayerElo =
-            Dict.get firstPlayer model.sessions
-                |> Maybe.map .elo
-                |> Maybe.withDefault 1000
-
-        secondPlayerElo =
-            Dict.get secondPlayer model.sessions
-                |> Maybe.map .elo
-                |> Maybe.withDefault 1000
-    in
+initialOnlineGame : Id GameId -> Player -> Player -> OnlineGameBackend
+initialOnlineGame id firstPlayer secondPlayer =
     { id = id
     , playerX = firstPlayer
     , playerO = secondPlayer
@@ -533,8 +553,6 @@ initialOnlineGame id firstPlayer secondPlayer model =
     , lastMove = Nothing
     , moveHistory = []
     , currentMoveIndex = -1
-    , eloX = firstPlayerElo
-    , eloO = secondPlayerElo
     }
 
 
@@ -552,221 +570,271 @@ initialOnlineGame id firstPlayer secondPlayer model =
 --     , moveHistory = []
 --     , currentMoveIndex = -1
 --     }
-
-
-wonSmallBoardX : SmallBoard
-wonSmallBoardX =
-    { cells = List.repeat 9 (Filled X)
-    , winner = Just X
-    }
-
-
-wonSmallBoardO : SmallBoard
-wonSmallBoardO =
-    { cells = List.repeat 9 (Filled O)
-    , winner = Just O
-    }
-
-
-drawSmallBoards : List SmallBoard
-drawSmallBoards =
-    [ wonSmallBoardX
-    , wonSmallBoardO
-    , wonSmallBoardO
-    , wonSmallBoardO
-    , wonSmallBoardX
-    , wonSmallBoardX
-    , wonSmallBoardX
-    , wonSmallBoardO
-    , emptySmallBoard
-    ]
-
-
-emptySmallBoard : SmallBoard
-emptySmallBoard =
-    { cells = List.repeat 9 Empty, winner = Nothing }
+-- wonSmallBoardX : SmallBoard
+-- wonSmallBoardX =
+--     { cells = List.repeat 9 (Filled X)
+--     , winner = Just X
+--     }
+-- wonSmallBoardO : SmallBoard
+-- wonSmallBoardO =
+--     { cells = List.repeat 9 (Filled O)
+--     , winner = Just O
+--     }
+-- drawSmallBoards : List SmallBoard
+-- drawSmallBoards =
+--     [ wonSmallBoardX
+--     , wonSmallBoardO
+--     , wonSmallBoardO
+--     , wonSmallBoardO
+--     , wonSmallBoardX
+--     , wonSmallBoardX
+--     , wonSmallBoardX
+--     , wonSmallBoardO
+--     , emptySmallBoard
+--     ]
+-- emptySmallBoard : SmallBoard
+-- emptySmallBoard =
+--     { cells = List.repeat 9 Empty, winner = Nothing }
 
 
 handleLeaveMatchmaking : SessionId -> ClientId -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
 handleLeaveMatchmaking sessionId _ model =
-    ( { model | matchmakingQueue = List.filter ((/=) sessionId) model.matchmakingQueue }
-    , Command.none
+    let
+        player : Player
+        player =
+            getPlayer sessionId model
+    in
+    ( { model | matchmakingQueue = List.filter (\p -> p /= player) model.matchmakingQueue }
+    , sendToClientsFromSessionId sessionId LeftMatchmakingToFrontend model
     )
 
 
 handleMakeMove : SessionId -> ClientId -> Move -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
 handleMakeMove sessionId _ move model =
     let
-        findGame =
-            Dict.toList model.activeGames
-                |> List.filter (\( _, game ) -> game.playerX == sessionId || game.playerO == sessionId)
-                |> List.head
+        player =
+            getPlayer sessionId model
     in
-    case findGame of
-        Just ( gameId, game ) ->
-            let
-                opponent =
-                    if game.playerX == sessionId then
-                        game.playerO
+    Dict.toList model.activeGames
+        |> List.filter (\( _, game ) -> game.playerX == player || game.playerO == player)
+        |> List.head
+        |> Maybe.map
+            (\( gameId, game ) ->
+                let
+                    opponent =
+                        if game.playerX == player then
+                            game.playerO
 
-                    else
-                        game.playerX
+                        else
+                            game.playerX
 
-                updatedBoards =
-                    List.indexedMap
-                        (\i board ->
-                            if i == move.boardIndex then
-                                let
-                                    updatedCells =
-                                        List.indexedMap
-                                            (\j cell ->
-                                                if j == move.cellIndex then
-                                                    Filled game.currentPlayer
+                    updatedBoards : List SmallBoard
+                    updatedBoards =
+                        List.indexedMap
+                            (\i board ->
+                                if i == move.boardIndex then
+                                    let
+                                        updatedCells =
+                                            List.indexedMap
+                                                (\j cell ->
+                                                    if j == move.cellIndex then
+                                                        Filled game.currentPlayer
 
-                                                else
-                                                    cell
-                                            )
-                                            board.cells
-                                in
-                                { board
-                                    | cells = updatedCells
-                                    , winner = checkSmallBoardWinner updatedCells
-                                }
+                                                    else
+                                                        cell
+                                                )
+                                                board.cells
+                                    in
+                                    { board
+                                        | cells = updatedCells
+                                        , winner = checkSmallBoardWinner updatedCells
+                                    }
 
-                            else
-                                board
-                        )
-                        game.boards
+                                else
+                                    board
+                            )
+                            game.boards
 
-                updatedGame =
-                    { game
-                        | boards = updatedBoards
-                        , currentPlayer =
-                            if game.currentPlayer == X then
-                                O
+                    updatedGame : OnlineGameBackend
+                    updatedGame =
+                        { game
+                            | boards = updatedBoards
+                            , currentPlayer =
+                                if game.currentPlayer == X then
+                                    O
 
-                            else
-                                X
-                        , lastMove = Just move
-                        , moveHistory = game.moveHistory ++ [ move ]
-                        , currentMoveIndex = List.length game.moveHistory
-                        , winner = checkBigBoardWinner updatedBoards
-                        , activeBoard =
-                            if isSmallBoardComplete (List.Extra.getAt move.cellIndex updatedBoards |> Maybe.withDefault emptySmallBoard) then
-                                Nothing
+                                else
+                                    X
+                            , lastMove = Just move
+                            , moveHistory = game.moveHistory ++ [ move ]
+                            , currentMoveIndex = List.length game.moveHistory
+                            , winner = checkBigBoardWinner updatedBoards
+                            , activeBoard =
+                                if isSmallBoardComplete (List.Extra.getAt move.cellIndex updatedBoards |> Maybe.withDefault emptySmallBoard) then
+                                    Nothing
 
-                            else
-                                Just move.cellIndex
-                    }
+                                else
+                                    Just move.cellIndex
+                        }
 
-                isGameFinished =
-                    checkBigBoardWinner updatedBoards /= Nothing || isBigBoardComplete updatedBoards
-            in
-            if isGameFinished then
-                finishGame gameId updatedGame model
+                    isGameFinished =
+                        checkBigBoardWinner updatedBoards /= Nothing || isBigBoardComplete updatedBoards
+                in
+                if isGameFinished then
+                    finishGame gameId updatedGame model
 
-            else
-                ( { model | activeGames = Dict.insert gameId updatedGame model.activeGames }
-                , Command.batch
-                    [ Effect.Lamdera.sendToFrontends opponent (SendGameToFrontend (toFrontendGame ( opponent, Dict.get opponent model.sessions |> Maybe.map .elo |> Maybe.withDefault 1000 ) updatedGame))
-                    , Effect.Lamdera.sendToFrontends sessionId (SendGameToFrontend (toFrontendGame ( sessionId, Dict.get sessionId model.sessions |> Maybe.map .elo |> Maybe.withDefault 1000 ) updatedGame))
-                    ]
-                )
+                else
+                    ( { model | activeGames = Dict.insert gameId updatedGame model.activeGames }
+                    , Command.batch
+                        [ sendToClientsFromPlayer opponent (SendGameToFrontend (toFrontendOnlineGame opponent updatedGame)) model
+                        , sendToClientsFromPlayer player (SendGameToFrontend (toFrontendOnlineGame player updatedGame)) model
+                        ]
+                    )
+            )
+        |> Maybe.withDefault ( model, Command.none )
 
-        Nothing ->
-            ( model, Command.none )
 
-
-finishGame : Id GameId -> OnlineGame -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
+finishGame : Id GameId -> OnlineGameBackend -> BackendModel -> ( BackendModel, Command BackendOnly ToFrontend BackendMsg )
 finishGame gameId game model =
     let
-        -- Get player emails and sessions for Elo updates
-        playerXSession =
-            Dict.get game.playerX model.sessions
-
-        playerOSession =
-            Dict.get game.playerO model.sessions
-
-        playerXEmail =
-            playerXSession |> Maybe.andThen .email
-
-        playerOEmail =
-            playerOSession |> Maybe.andThen .email
-
         isDraw =
             game.winner == Nothing && isBigBoardComplete game.boards
 
-        ( newEloX, newEloO ) =
+        -- Determine winner and loser
+        players =
+            case game.winner of
+                Just X ->
+                    { winner = game.playerX
+                    , loser = game.playerO
+                    }
+
+                Just O ->
+                    { winner = game.playerO
+                    , loser = game.playerX
+                    }
+
+                Nothing ->
+                    -- In case of draw, consider X as winner but use isDraw=true for Elo
+                    { winner = game.playerX
+                    , loser = game.playerO
+                    }
+
+        -- Calculate ELO changes using Elo module
+        ( newWinnerElo, newLoserElo ) =
             Elo.updateEloRatings
-                { winner = game.eloX
-                , loser = game.eloO
+                { winner = getEloRating players.winner
+                , loser = getEloRating players.loser
                 , isDraw = isDraw
                 }
 
-        updatedSessions =
-            model.sessions
-                |> (case playerXEmail of
-                        Just _ ->
-                            Dict.update game.playerX
-                                (\mbSession ->
-                                    mbSession
-                                        |> Maybe.map (\s -> { s | elo = newEloX })
-                                )
-
-                        Nothing ->
-                            identity
-                   )
-                |> (case playerOEmail of
-                        Just _ ->
-                            Dict.update game.playerO
-                                (\mbSession ->
-                                    mbSession
-                                        |> Maybe.map (\s -> { s | elo = newEloO })
-                                )
-
-                        Nothing ->
-                            identity
-                   )
-
-        updatedUsers =
-            model.users
-                |> (case playerXEmail of
-                        Just emailX ->
-                            Dict.update emailX
-                                (\mbUser ->
-                                    mbUser
-                                        |> Maybe.map (\u -> { u | elo = newEloX })
-                                )
-
-                        Nothing ->
-                            identity
-                   )
-                |> (case playerOEmail of
-                        Just emailO ->
-                            Dict.update emailO
-                                (\mbUser ->
-                                    mbUser
-                                        |> Maybe.map (\u -> { u | elo = newEloO })
-                                )
-
-                        Nothing ->
-                            identity
-                   )
-
+        -- Update game with new ELO ratings
         updatedGame =
-            { game | eloX = newEloX, eloO = newEloO }
+            { game
+                | playerX =
+                    updateEloRating game.playerX
+                        (if game.playerX == players.winner then
+                            newWinnerElo
+
+                         else
+                            newLoserElo
+                        )
+                , playerO =
+                    updateEloRating game.playerO
+                        (if game.playerO == players.winner then
+                            newWinnerElo
+
+                         else
+                            newLoserElo
+                        )
+            }
 
         updatedModel =
             { model
                 | activeGames = Dict.remove gameId model.activeGames
                 , finishedGames = Dict.insert gameId updatedGame model.finishedGames
-                , users = updatedUsers
-                , sessions = updatedSessions
             }
     in
     ( updatedModel
     , Command.batch
-        [ Effect.Lamdera.sendToFrontends game.playerO (SendFinishedGameToFrontend (toFrontendGame ( game.playerO, newEloO ) updatedGame))
-        , Effect.Lamdera.sendToFrontends game.playerX (SendFinishedGameToFrontend (toFrontendGame ( game.playerX, newEloX ) updatedGame))
+        [ sendToClientsFromPlayer game.playerO (SendFinishedGameToFrontend (toFrontendOnlineGame game.playerO updatedGame)) updatedModel
+        , sendToClientsFromPlayer game.playerX (SendFinishedGameToFrontend (toFrontendOnlineGame game.playerX updatedGame)) updatedModel
         ]
     )
+
+
+
+-- Helper function to get all client IDs for a user's session
+
+
+getAllClientIdsFromSessionId : SessionId -> BackendModel -> List ClientId
+getAllClientIdsFromSessionId sessionId model =
+    Dict.get sessionId model.sessions
+        |> Maybe.map .clientIds
+        |> Maybe.withDefault []
+
+
+getAllClientIdsFromPlayer : Player -> BackendModel -> List ClientId
+getAllClientIdsFromPlayer player model =
+    case player of
+        Authenticated user ->
+            Dict.toList model.sessions
+                |> List.filter (\( _, session ) -> session.userId == Just user.id)
+                |> List.concatMap (\( _, session ) -> session.clientIds)
+
+        Anonymous sessionId _ ->
+            getAllClientIdsFromSessionId sessionId model
+
+
+
+-- Helper function to get all client IDs for a user (across all their sessions)
+
+
+getAllUserClientIdsFromSessionId : SessionId -> BackendModel -> List ClientId
+getAllUserClientIdsFromSessionId sessionId model =
+    case Dict.get sessionId model.sessions |> Maybe.andThen .email of
+        Just email ->
+            -- User is authenticated, get all sessions with this email
+            Dict.toList model.sessions
+                |> List.filter (\( _, session ) -> session.email == Just email)
+                |> List.concatMap (\( _, session ) -> session.clientIds)
+
+        Nothing ->
+            -- User is anonymous, just get their session's client IDs
+            getAllClientIdsFromSessionId sessionId model
+
+
+
+-- Helper function to send a message to all clients of a user
+
+
+sendToClientsFromSessionId : SessionId -> ToFrontend -> BackendModel -> Command BackendOnly ToFrontend BackendMsg
+sendToClientsFromSessionId sessionId msg model =
+    Command.batch
+        (List.map
+            (\clientId -> Effect.Lamdera.sendToFrontend clientId msg)
+            (getAllUserClientIdsFromSessionId sessionId model)
+        )
+
+
+sendToClientsFromPlayer : Player -> ToFrontend -> BackendModel -> Command BackendOnly ToFrontend BackendMsg
+sendToClientsFromPlayer player msg model =
+    Command.batch
+        (List.map
+            (\clientId -> Effect.Lamdera.sendToFrontend clientId msg)
+            (getAllClientIdsFromPlayer player model)
+        )
+
+
+getPlayer : SessionId -> BackendModel -> Player
+getPlayer sessionId model =
+    case Dict.get sessionId model.sessions |> Maybe.andThen .email of
+        Just email ->
+            case Dict.get email model.users of
+                Just user ->
+                    Authenticated (toPublicUser user)
+
+                Nothing ->
+                    Anonymous sessionId 1000
+
+        Nothing ->
+            Anonymous sessionId 1000

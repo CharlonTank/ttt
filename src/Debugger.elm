@@ -5,11 +5,13 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
 import I18n exposing (languageToString)
+import Id
 import Json.Decode as D
 import LocalStorage exposing (LocalStorage)
 import Theme exposing (..)
 import Tutorial.Types exposing (TutorialStep(..))
 import Types exposing (..)
+import Effect.Lamdera
 
 
 view : UserConfig -> FrontendModel -> List (Html FrontendMsg)
@@ -78,6 +80,7 @@ view { c } model =
                 , text <| "userPreference: " ++ userPreferenceToString model.localStorage.userPreference model.localStorage.systemMode ++ "\n"
                 , text <| "route: " ++ routeToString model.route ++ "\n"
                 , text <| "login: " ++ loginStateToString model.login ++ "\n"
+                , text <| "self: " ++ (model.self |> Maybe.map playerToString |> Maybe.withDefault "No self found") ++ "\n"
                 , text <| "selectedDifficulty: " ++ difficultyToString model.selectedDifficulty ++ "\n"
                 , text <| "tutorialState: " ++ tutorialStateToString model.tutorialState ++ "\n"
                 , text <| "inMatchmaking: " ++ boolToString model.inMatchmaking ++ "\n"
@@ -148,9 +151,17 @@ loginStateToString state =
         LoginError error ->
             "LoginError " ++ loginErrorToString error
 
-        Registered user ->
-            "Registered { email = " ++ user.email ++ ", elo = " ++ String.fromInt user.elo ++ " }"
+        Registered ->
+            "Registered"
 
+playerToString : Player -> String
+playerToString player =
+    case player of
+        Authenticated publicUser ->
+            "Authenticated { id = " ++ Id.display4CharsFromId publicUser.id ++ ", name = " ++ publicUser.name ++ ", elo = " ++ String.fromInt publicUser.elo ++ " }"
+
+        Anonymous sessionId elo ->
+            "Anonymous { sessionId = " ++ Effect.Lamdera.sessionIdToString sessionId ++ ", elo = " ++ String.fromInt elo ++ " }"
 
 loginErrorToString : LoginErrorWrapper -> String
 loginErrorToString error =
@@ -221,7 +232,9 @@ boolToString bool =
     else
         "False"
 
-
+-- type FrontendGame
+--     = OnlineGame FrontendOnlineGame
+--     | OfflineGame FrontendOfflineGame
 gameToString : FrontendGame -> String
 gameToString game =
     let
@@ -266,42 +279,83 @@ gameToString game =
                 ++ String.fromInt move.cellIndex
                 ++ " }"
     in
-    "{ boards = ["
-        ++ String.join ",\n  " (List.map smallBoardToString game.boards)
-        ++ "],\n  currentPlayer = "
-        ++ (case game.currentPlayer of
-                X ->
-                    "X"
-
-                O ->
-                    "O"
-           )
-        ++ ",\n  activeBoard = "
-        ++ (case game.activeBoard of
-                Nothing ->
-                    "Nothing"
-
-                Just n ->
-                    "Just " ++ String.fromInt n
-           )
-        ++ ",\n  winner = "
-        ++ (case game.winner of
-                Nothing ->
-                    "Nothing"
-
-                Just player ->
-                    case player of
+    case game of
+        OnlineGame onlineGame ->
+            "{ boards = ["
+                ++ String.join ",\n  " (List.map smallBoardToString onlineGame.boards)
+                ++ "],\n  currentPlayer = "
+                ++ (case onlineGame.currentPlayer of
                         X ->
-                            "Just X"
+                            "X"
 
                         O ->
-                            "Just O"
-           )
-        ++ ",\n  moveHistory = ["
-        ++ String.join ", " (List.map moveToString game.moveHistory)
-        ++ "],\n  currentMoveIndex = "
-        ++ String.fromInt game.currentMoveIndex
-        ++ " }"
+                            "O"
+                )
+                ++ ",\n  activeBoard = "
+                ++ (case onlineGame.activeBoard of
+                        Nothing ->
+                            "Nothing"
+
+                        Just n ->
+                            "Just " ++ String.fromInt n
+                )
+                ++ ",\n  winner = "
+                ++ (case onlineGame.winner of
+                        Nothing ->
+                            "Nothing"
+
+                        Just player ->
+                            case player of
+                                X ->
+                                    "Just X"
+
+                                O ->
+                                    "Just O"
+                )
+                ++ ",\n  moveHistory = ["
+                ++ String.join ", " (List.map moveToString onlineGame.moveHistory)
+                ++ "],\n  currentMoveIndex = "
+                ++ String.fromInt onlineGame.currentMoveIndex
+                ++ " }"
+
+        OfflineGame offlineGame ->
+            "{ boards = ["
+                ++ String.join ",\n  " (List.map smallBoardToString offlineGame.boards)
+                ++ "],\n  currentPlayer = "
+                ++ (case offlineGame.currentPlayer of
+                        X ->
+                            "X"
+
+                        O ->
+                            "O"
+                )
+                ++ ",\n  activeBoard = "
+                ++ (case offlineGame.activeBoard of
+                        Nothing ->
+                            "Nothing"
+
+                        Just n ->
+                            "Just " ++ String.fromInt n
+                )
+                ++ ",\n  winner = "
+                ++ (case offlineGame.winner of
+                        Nothing ->
+                            "Nothing"
+
+                        Just player ->
+                            case player of
+                                X ->
+                                    "Just X"
+
+                                O ->
+                                    "Just O"
+                )
+                ++ ",\n  moveHistory = ["
+                ++ String.join ", " (List.map moveToString offlineGame.moveHistory)
+                ++ "],\n  currentMoveIndex = "
+                ++ String.fromInt offlineGame.currentMoveIndex
+                ++ " }"
+                
 
 
 localStorageToString : LocalStorage -> String
