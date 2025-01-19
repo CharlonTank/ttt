@@ -291,11 +291,17 @@ viewActiveGames c games =
                     (\( Id gameId, game ) ->
                         [ viewCode c (display4CharsFromUUID gameId)
                         , case game.playerX of
-                            Authenticated user -> viewCode c user.name
-                            Anonymous sessionId _ -> viewCode c (display4CharsFromSessionId sessionId)
+                            Authenticated user ->
+                                viewCode c user.name
+
+                            Anonymous sessionId _ ->
+                                viewCode c (display4CharsFromSessionId sessionId)
                         , case game.playerO of
-                            Authenticated user -> viewCode c user.name
-                            Anonymous sessionId _ -> viewCode c (display4CharsFromSessionId sessionId)
+                            Authenticated user ->
+                                viewCode c user.name
+
+                            Anonymous sessionId _ ->
+                                viewCode c (display4CharsFromSessionId sessionId)
                         ]
                     )
         , emptyMessage = "No active games"
@@ -312,11 +318,17 @@ viewFinishedGames c games =
                     (\( Id gameId, game ) ->
                         [ viewCode c (display4CharsFromUUID gameId)
                         , case game.playerX of
-                            Authenticated user -> viewCode c user.name
-                            Anonymous sessionId _ -> viewCode c (display4CharsFromSessionId sessionId)
+                            Authenticated user ->
+                                viewCode c user.name
+
+                            Anonymous sessionId _ ->
+                                viewCode c (display4CharsFromSessionId sessionId)
                         , case game.playerO of
-                            Authenticated user -> viewCode c user.name
-                            Anonymous sessionId _ -> viewCode c (display4CharsFromSessionId sessionId)
+                            Authenticated user ->
+                                viewCode c user.name
+
+                            Anonymous sessionId _ ->
+                                viewCode c (display4CharsFromSessionId sessionId)
                         , viewGameStatus game
                         ]
                     )

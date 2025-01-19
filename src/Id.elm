@@ -3,8 +3,9 @@ module Id exposing
     , Id(..)
     , UserId(..)
     , display4CharsFromClientId
+    , display4CharsFromId
     , display4CharsFromSessionId
-    , display4CharsFromUUID, display4CharsFromId
+    , display4CharsFromUUID
     )
 
 import Effect.Lamdera exposing (ClientId, SessionId)

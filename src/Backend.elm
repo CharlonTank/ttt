@@ -156,8 +156,14 @@ update msg model =
                                         )
                             )
 
+                updatedQueue =
+                    List.filter (\p -> p /= player) model.matchmakingQueue
+
                 updatedModel =
-                    { model | sessions = updatedSessions }
+                    { model
+                        | sessions = updatedSessions
+                        , matchmakingQueue = updatedQueue
+                    }
 
                 shouldDisconnectFromGame =
                     case player of
@@ -170,7 +176,12 @@ update msg model =
                             Dict.get sessionId updatedSessions == Nothing
             in
             if shouldDisconnectFromGame && isPlayerInGame player model then
-                disconnectFromGame sessionId player model
+                disconnectFromGame sessionId player updatedModel
+
+            else if model.matchmakingQueue /= updatedQueue then
+                ( updatedModel
+                , sendToClientsFromPlayer player LeftMatchmakingToFrontend updatedModel
+                )
 
             else
                 ( updatedModel, Command.none )
@@ -364,9 +375,25 @@ updateFromFrontend sessionId clientId msg model =
                                                 , userId = Just user.id
                                             }
                                         )
+
+                            -- Remove anonymous player from matchmaking if they were in queue
+                            anonymousPlayer =
+                                Anonymous sessionId user.elo
+
+                            updatedQueue =
+                                List.filter (\p -> p /= anonymousPlayer) model.matchmakingQueue
+
+                            updatedModel =
+                                { model
+                                    | sessions = updatedSessions
+                                    , matchmakingQueue = updatedQueue
+                                }
                         in
-                        ( { model | sessions = updatedSessions }
-                        , Effect.Lamdera.sendToFrontend clientId (SignInDone (toPublicUser user))
+                        ( updatedModel
+                        , Command.batch
+                            [ Effect.Lamdera.sendToFrontend clientId (SignInDone (toPublicUser user))
+                            , Effect.Lamdera.sendToFrontend clientId LeftMatchmakingToFrontend
+                            ]
                         )
 
                     else
@@ -445,14 +472,25 @@ updateFromFrontend sessionId clientId msg model =
                         Authenticated publicUser ->
                             Anonymous sessionId publicUser.elo
 
-                        Anonymous sid elo ->
-                            Anonymous sid elo
+                        Anonymous sid _ ->
+                            Anonymous sid 1000
+
+                -- Remove player from matchmaking queue
+                updatedQueue =
+                    List.filter (\p -> p /= player) model.matchmakingQueue
+
+                updatedModel =
+                    { model
+                        | sessions = updatedSessions
+                        , matchmakingQueue = updatedQueue
+                    }
             in
-            ( { model | sessions = updatedSessions }
+            ( updatedModel
             , Command.batch
                 (List.map
                     (\targetClientId -> Effect.Lamdera.sendToFrontend targetClientId (SendUserToFrontend userToAnonymous))
                     clientIds
+                    ++ [ Effect.Lamdera.sendToFrontend clientId LeftMatchmakingToFrontend ]
                 )
             )
 

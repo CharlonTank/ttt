@@ -12,8 +12,7 @@ module GameLogic exposing
     )
 
 import List.Extra as List
-import Types exposing (CellState(..), FrontendOnlineGame, GameResult(..), Move, OnlineGameBackend, PlayerSide(..), SmallBoard)
-import Types exposing (FrontendGameState)
+import Types exposing (CellState(..), FrontendGameState, FrontendOnlineGame, GameResult(..), Move, OnlineGameBackend, PlayerSide(..), SmallBoard)
 
 
 emptySmallBoard : SmallBoard

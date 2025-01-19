@@ -1,6 +1,7 @@
 module Debugger exposing (view)
 
 import Color
+import Effect.Lamdera
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
@@ -11,7 +12,6 @@ import LocalStorage exposing (LocalStorage)
 import Theme exposing (..)
 import Tutorial.Types exposing (TutorialStep(..))
 import Types exposing (..)
-import Effect.Lamdera
 
 
 view : UserConfig -> FrontendModel -> List (Html FrontendMsg)
@@ -154,6 +154,7 @@ loginStateToString state =
         Registered ->
             "Registered"
 
+
 playerToString : Player -> String
 playerToString player =
     case player of
@@ -162,6 +163,7 @@ playerToString player =
 
         Anonymous sessionId elo ->
             "Anonymous { sessionId = " ++ Effect.Lamdera.sessionIdToString sessionId ++ ", elo = " ++ String.fromInt elo ++ " }"
+
 
 loginErrorToString : LoginErrorWrapper -> String
 loginErrorToString error =
@@ -232,9 +234,13 @@ boolToString bool =
     else
         "False"
 
+
+
 -- type FrontendGame
 --     = OnlineGame FrontendOnlineGame
 --     | OfflineGame FrontendOfflineGame
+
+
 gameToString : FrontendGame -> String
 gameToString game =
     let
@@ -290,7 +296,7 @@ gameToString game =
 
                         O ->
                             "O"
-                )
+                   )
                 ++ ",\n  activeBoard = "
                 ++ (case onlineGame.activeBoard of
                         Nothing ->
@@ -298,7 +304,7 @@ gameToString game =
 
                         Just n ->
                             "Just " ++ String.fromInt n
-                )
+                   )
                 ++ ",\n  winner = "
                 ++ (case onlineGame.winner of
                         Nothing ->
@@ -311,7 +317,7 @@ gameToString game =
 
                                 O ->
                                     "Just O"
-                )
+                   )
                 ++ ",\n  moveHistory = ["
                 ++ String.join ", " (List.map moveToString onlineGame.moveHistory)
                 ++ "],\n  currentMoveIndex = "
@@ -328,7 +334,7 @@ gameToString game =
 
                         O ->
                             "O"
-                )
+                   )
                 ++ ",\n  activeBoard = "
                 ++ (case offlineGame.activeBoard of
                         Nothing ->
@@ -336,7 +342,7 @@ gameToString game =
 
                         Just n ->
                             "Just " ++ String.fromInt n
-                )
+                   )
                 ++ ",\n  winner = "
                 ++ (case offlineGame.winner of
                         Nothing ->
@@ -349,13 +355,12 @@ gameToString game =
 
                                 O ->
                                     "Just O"
-                )
+                   )
                 ++ ",\n  moveHistory = ["
                 ++ String.join ", " (List.map moveToString offlineGame.moveHistory)
                 ++ "],\n  currentMoveIndex = "
                 ++ String.fromInt offlineGame.currentMoveIndex
                 ++ " }"
-                
 
 
 localStorageToString : LocalStorage -> String
