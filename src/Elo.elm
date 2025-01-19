@@ -1,15 +1,18 @@
 module Elo exposing
     ( calculateNewRating
     , expectedScore
+    , getEloRating
+    , getEloRatingFromDifficulty
     , kFactor
-    , updateEloRatings, getEloRating, updateEloRating
+    , updateEloRating
+    , updateEloRatings
     )
 
 {-| Calculate the expected score for a player based on their rating and their opponent's rating.
 The expected score is a number between 0 and 1 representing the probability of winning.
 -}
-import Types exposing (Player)
-import Types exposing (Player(..))
+
+import Types exposing (BotDifficulty(..), Player(..))
 
 
 expectedScore : Int -> Int -> Float
@@ -73,6 +76,7 @@ updateEloRatings { winner, loser, isDraw } =
         , calculateNewRating loser winner 0.0
         )
 
+
 getEloRating : Player -> Int
 getEloRating player =
     case player of
@@ -82,6 +86,21 @@ getEloRating player =
         Anonymous _ elo ->
             elo
 
+
+getEloRatingFromDifficulty : BotDifficulty -> Int
+getEloRatingFromDifficulty difficulty =
+    case difficulty of
+        Easy ->
+            600
+
+        Medium ->
+            800
+
+        Hard ->
+            1000
+
+        Elite ->
+            1200
 
 
 updateEloRating : Player -> Int -> Player

@@ -264,7 +264,7 @@ type FrontendMsg
     | Tick Effect.Time.Posix
     | ShowAbandonConfirm
     | HideAbandonConfirm
-    | ConfirmAbandon FrontendOnlineGame
+    | ConfirmAbandon FrontendGame
     | StartTutorial
     | NextTutorialStep
     | CompleteTutorial

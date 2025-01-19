@@ -164,7 +164,7 @@ viewTutorialCell { c } tutorialStep boardIndex isClickableIndex cellStyles cellI
         [ symbol ]
 
 
-viewSmallBoardTutorial : UserConfig -> TutorialStep -> FrontendOnlineGame -> Int -> SmallBoard -> Html FrontendMsg
+viewSmallBoardTutorial : UserConfig -> TutorialStep -> FrontendOfflineGame -> Int -> SmallBoard -> Html FrontendMsg
 viewSmallBoardTutorial ({ c } as userConfig) tutorialStep frontendGame boardIndex smallBoardData =
     let
         isActive =
@@ -291,8 +291,8 @@ viewSmallBoardTutorial ({ c } as userConfig) tutorialStep frontendGame boardInde
         cellElements
 
 
-viewTutorialOverlay : UserConfig -> FrontendOnlineGame -> TutorialStep -> Html FrontendMsg
-viewTutorialOverlay { t, c } frontendGame tutorialStep =
+viewTutorialOverlay : UserConfig -> TutorialStep -> Html FrontendMsg
+viewTutorialOverlay { t, c } tutorialStep =
     let
         ( tutorialMessage, stepNumber ) =
             case tutorialStep of
@@ -408,8 +408,8 @@ shouldEnableNextButton step =
             False
 
 
-viewGame : UserConfig -> FrontendOnlineGame -> FrontendModel -> TutorialStep -> Html FrontendMsg
-viewGame ({ t, c } as userConfig) frontendGame model tutorialStep =
+viewGame : UserConfig -> FrontendOfflineGame -> TutorialStep -> Html FrontendMsg
+viewGame ({ t, c } as userConfig) frontendGame tutorialStep =
     div
         [ style "display" "flex"
         , style "flex-direction" "column"
@@ -452,7 +452,7 @@ viewGame ({ t, c } as userConfig) frontendGame model tutorialStep =
         ]
 
 
-viewStatus : UserConfig -> FrontendOnlineGame -> Html msg
+viewStatus : UserConfig -> FrontendGameState a -> Html msg
 viewStatus ({ t, c } as userConfig) frontendGame =
     div
         [ style "margin" "10px 0"
@@ -486,7 +486,7 @@ viewStatus ({ t, c } as userConfig) frontendGame =
         ]
 
 
-viewBigBoardTutorial : UserConfig -> FrontendOnlineGame -> TutorialStep -> Html FrontendMsg
+viewBigBoardTutorial : UserConfig -> FrontendOfflineGame -> TutorialStep -> Html FrontendMsg
 viewBigBoardTutorial ({ t, c } as userConfig) frontendGame tutorialStep =
     let
         boardStyle =

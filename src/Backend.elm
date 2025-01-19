@@ -87,14 +87,6 @@ update msg model =
                                         Just { userId = Nothing, email = Nothing, clientIds = [ clientId ] }
                             )
 
-                maybeCurrentUser : Maybe PublicUser
-                maybeCurrentUser =
-                    model.sessions
-                        |> Dict.get sessionId
-                        |> Maybe.andThen
-                            (.email >> Maybe.andThen (\email -> Dict.get email model.users))
-                        |> Maybe.map toPublicUser
-
                 player =
                     getPlayer sessionId model
             in
@@ -127,7 +119,7 @@ update msg model =
                         ( { newModel | sessions = updatedSessions }
                         , Command.batch
                             [ cmds
-                            , Effect.Lamdera.sendToFrontend clientId (SendUserToFrontend maybeCurrentUser)
+                            , Effect.Lamdera.sendToFrontend clientId (SendUserToFrontend player)
                             ]
                         )
                    )
@@ -443,11 +435,23 @@ updateFromFrontend sessionId clientId msg model =
                     Dict.get sessionId model.sessions
                         |> Maybe.map .clientIds
                         |> Maybe.withDefault []
+
+                player =
+                    getPlayer sessionId model
+
+                userToAnonymous : Player
+                userToAnonymous =
+                    case player of
+                        Authenticated publicUser ->
+                            Anonymous sessionId publicUser.elo
+
+                        Anonymous sid elo ->
+                            Anonymous sid elo
             in
             ( { model | sessions = updatedSessions }
             , Command.batch
                 (List.map
-                    (\targetClientId -> Effect.Lamdera.sendToFrontend targetClientId (SendUserToFrontend Nothing))
+                    (\targetClientId -> Effect.Lamdera.sendToFrontend targetClientId (SendUserToFrontend userToAnonymous))
                     clientIds
                 )
             )

@@ -551,15 +551,27 @@ update msg ({ localStorage } as model) =
             ( { model | showAbandonConfirm = False }, Command.none )
 
         ConfirmAbandon frontendGame ->
-            ( { model
-                | showAbandonConfirm = False
-                , frontendGame = Just <| OnlineGame { frontendGame | gameResult = Just Lost }
-              }
-            , Command.batch
-                [ Effect.Lamdera.sendToBackend (AbandonGameToBackend frontendGame.id)
-                , Audio.playSound LoseSound
-                ]
-            )
+            case frontendGame of
+                OnlineGame onlineGame ->
+                    ( { model
+                        | showAbandonConfirm = False
+                        , frontendGame = Just <| OnlineGame { onlineGame | gameResult = Just Lost }
+                      }
+                    , Command.batch
+                        [ Effect.Lamdera.sendToBackend (AbandonGameToBackend onlineGame.id)
+                        , Audio.playSound LoseSound
+                        ]
+                    )
+
+                OfflineGame offlineGame ->
+                    ( { model
+                        | showAbandonConfirm = False
+                        , frontendGame = Just <| OfflineGame { offlineGame | gameResult = Just Lost }
+                      }
+                    , Command.batch
+                        [ Audio.playSound LoseSound
+                        ]
+                    )
 
         StartTutorial ->
             model.self
@@ -974,12 +986,11 @@ view model =
                     ( HomeRoute, _, _ ) ->
                         viewHome userConfig model
 
-                    ( TutorialRoute, Just (OnlineGame frontendGame), Just tutorialState ) ->
-                        Tutorial.View.viewGame userConfig frontendGame model tutorialState
+                    ( TutorialRoute, Just (OfflineGame frontendGame), Just tutorialState ) ->
+                        Tutorial.View.viewGame userConfig frontendGame tutorialState
 
-                    ( GameRoute OnlineGameMode, Just (OnlineGame frontendGame), _ ) ->
-                        viewGame userConfig model frontendGame OnlineGameMode
-
+                    -- ( GameRoute OnlineGameMode, Just (OnlineGame frontendGame), _ ) ->
+                    --     viewGame userConfig model frontendGame OnlineGameMode
                     ( GameRoute mode, Just frontendGame, _ ) ->
                         viewGame userConfig model frontendGame mode
 
@@ -993,9 +1004,12 @@ view model =
                         text "SHOULD NOT HAPPEN"
                  ]
                     ++ Debugger.view userConfig model
-                    ++ [ case model.frontendGame |> Maybe.andThen .gameResult of
-                            Just gameResult ->
-                                viewGameResultModal userConfig gameResult
+                    ++ [ case model.frontendGame of
+                            Just (OnlineGame onlineGame) ->
+                                onlineGame.gameResult |> Maybe.map (viewGameResultModal userConfig) |> Maybe.withDefault (text "")
+
+                            Just (OfflineGame offlineGame) ->
+                                offlineGame.gameResult |> Maybe.map (viewGameResultModal userConfig) |> Maybe.withDefault (text "")
 
                             Nothing ->
                                 text ""
@@ -1004,9 +1018,9 @@ view model =
 
                          else
                             text ""
-                       , case ( model.frontendGame, model.tutorialState ) of
-                            ( Just frontendGame, Just tutorialState ) ->
-                                Tutorial.View.viewTutorialOverlay userConfig frontendGame tutorialState
+                       , case model.tutorialState of
+                            Just tutorialState ->
+                                Tutorial.View.viewTutorialOverlay userConfig tutorialState
 
                             _ ->
                                 text ""
@@ -1137,7 +1151,7 @@ viewHome ({ t, c } as userConfig) model =
         ]
 
 
-viewGame : UserConfig -> FrontendModel -> FrontendOnlineGame -> GameMode -> Html FrontendMsg
+viewGame : UserConfig -> FrontendModel -> FrontendGame -> GameMode -> Html FrontendMsg
 viewGame ({ t, c } as userConfig) model frontendGame mode =
     let
         gameTitle =
@@ -1163,6 +1177,22 @@ viewGame ({ t, c } as userConfig) model frontendGame mode =
 
                 OnlineGameMode ->
                     t.playingOnline
+
+        isBotPlaying =
+            case frontendGame of
+                OnlineGame _ ->
+                    False
+
+                OfflineGame onlineGame ->
+                    onlineGame.botIsPlaying
+
+        ( currentMoveIndex, moveHistory ) =
+            case frontendGame of
+                OnlineGame onlineGame ->
+                    ( onlineGame.currentMoveIndex, onlineGame.moveHistory )
+
+                OfflineGame offlineGame ->
+                    ( offlineGame.currentMoveIndex, offlineGame.moveHistory )
     in
     div
         [ style "display" "flex"
@@ -1186,7 +1216,12 @@ viewGame ({ t, c } as userConfig) model frontendGame mode =
             , style "flex-shrink" "0"
             ]
             [ text gameTitle
-            , viewStatus userConfig frontendGame mode
+            , case frontendGame of
+                OnlineGame onlineGame ->
+                    viewStatusOnline userConfig onlineGame
+
+                OfflineGame offlineGame ->
+                    viewStatusOffline userConfig offlineGame mode
             ]
         , div
             [ style "flex" "1"
@@ -1201,18 +1236,23 @@ viewGame ({ t, c } as userConfig) model frontendGame mode =
                 [ style "width" "min(100%, calc(100vh - 300px))"
                 , style "aspect-ratio" "1/1"
                 ]
-                [ viewBigBoard userConfig frontendGame
+                [ case frontendGame of
+                    OnlineGame onlineGame ->
+                        viewBigBoard userConfig onlineGame isBotPlaying
+
+                    OfflineGame offlineGame ->
+                        viewBigBoard userConfig offlineGame isBotPlaying
                 ]
             ]
         , div
             [ style "padding" "10px"
             , style "flex-shrink" "0"
             ]
-            [ case mode of
-                WithBot _ ->
+            [ case ( mode, frontendGame ) of
+                ( WithBot _, OfflineGame offlineGame ) ->
                     let
                         canIPlay =
-                            (frontendGame.self |> Maybe.map Tuple.first) == Just frontendGame.currentPlayer && frontendGame.winner == Nothing && not frontendGame.botIsPlaying
+                            offlineGame.winner == Nothing && not isBotPlaying && offlineGame.currentPlayer == offlineGame.selfSide
                     in
                     div []
                         [ button
@@ -1302,66 +1342,61 @@ viewGame ({ t, c } as userConfig) model frontendGame mode =
                                 [ text t.abandon ]
                         ]
 
-                OnlineGameMode ->
-                    case frontendGame.opponent of
-                        OnlineOpponent _ ->
-                            if model.showAbandonConfirm then
-                                div
-                                    [ style "display" "flex"
-                                    , style "gap" "10px"
-                                    , style "margin-bottom" "10px"
-                                    ]
-                                    [ button
-                                        [ style "flex" "1"
-                                        , style "padding" "12px"
-                                        , style "font-size" "0.8em"
-                                        , style "font-family" "inherit"
-                                        , style "background-color" Color.danger
-                                        , style "color" "white"
-                                        , style "border" "none"
-                                        , style "border-radius" "10px"
-                                        , style "cursor" "pointer"
-                                        , style "transition" "all 0.2s ease"
-                                        , onClick (ConfirmAbandon frontendGame)
-                                        ]
-                                        [ text t.confirmAbandon ]
-                                    , button
-                                        [ style "flex" "1"
-                                        , style "padding" "12px"
-                                        , style "font-size" "0.8em"
-                                        , style "font-family" "inherit"
-                                        , style "background-color" Color.primary
-                                        , style "color" "white"
-                                        , style "border" "none"
-                                        , style "border-radius" "10px"
-                                        , style "cursor" "pointer"
-                                        , style "transition" "all 0.2s ease"
-                                        , onClick HideAbandonConfirm
-                                        ]
-                                        [ text t.cancelAbandon ]
-                                    ]
+                ( OnlineGameMode, OnlineGame onlineGame ) ->
+                    if model.showAbandonConfirm then
+                        div
+                            [ style "display" "flex"
+                            , style "gap" "10px"
+                            , style "margin-bottom" "10px"
+                            ]
+                            [ button
+                                [ style "flex" "1"
+                                , style "padding" "12px"
+                                , style "font-size" "0.8em"
+                                , style "font-family" "inherit"
+                                , style "background-color" Color.danger
+                                , style "color" "white"
+                                , style "border" "none"
+                                , style "border-radius" "10px"
+                                , style "cursor" "pointer"
+                                , style "transition" "all 0.2s ease"
+                                , onClick (ConfirmAbandon frontendGame)
+                                ]
+                                [ text t.confirmAbandon ]
+                            , button
+                                [ style "flex" "1"
+                                , style "padding" "12px"
+                                , style "font-size" "0.8em"
+                                , style "font-family" "inherit"
+                                , style "background-color" Color.primary
+                                , style "color" "white"
+                                , style "border" "none"
+                                , style "border-radius" "10px"
+                                , style "cursor" "pointer"
+                                , style "transition" "all 0.2s ease"
+                                , onClick HideAbandonConfirm
+                                ]
+                                [ text t.cancelAbandon ]
+                            ]
 
-                            else
-                                button
-                                    [ style "padding" "12px"
-                                    , style "font-size" "0.8em"
-                                    , style "font-family" "inherit"
-                                    , style "background-color" Color.danger
-                                    , style "color" "white"
-                                    , style "border" "none"
-                                    , style "border-radius" "10px"
-                                    , style "cursor" "pointer"
-                                    , style "transition" "all 0.2s ease"
-                                    , style "margin-bottom" "10px"
-                                    , style "width" "100%"
-                                    , onClick ShowAbandonConfirm
-                                    ]
-                                    [ text t.abandon ]
+                    else
+                        button
+                            [ style "padding" "12px"
+                            , style "font-size" "0.8em"
+                            , style "font-family" "inherit"
+                            , style "background-color" Color.danger
+                            , style "color" "white"
+                            , style "border" "none"
+                            , style "border-radius" "10px"
+                            , style "cursor" "pointer"
+                            , style "transition" "all 0.2s ease"
+                            , style "margin-bottom" "10px"
+                            , style "width" "100%"
+                            , onClick ShowAbandonConfirm
+                            ]
+                            [ text t.abandon ]
 
-                        _ ->
-                            text ""
-
-                WithFriend ->
+                _ ->
                     if model.tutorialState == Nothing then
                         button
                             [ style "padding" "12px"
@@ -1391,7 +1426,7 @@ viewGame ({ t, c } as userConfig) model frontendGame mode =
                     , style "padding" "8px"
                     , style "font-size" "1.2em"
                     , style "background-color"
-                        (if frontendGame.currentMoveIndex >= 0 then
+                        (if currentMoveIndex >= 0 then
                             Color.primary
 
                          else
@@ -1401,7 +1436,7 @@ viewGame ({ t, c } as userConfig) model frontendGame mode =
                     , style "border" "none"
                     , style "border-radius" "6px"
                     , style "cursor"
-                        (if frontendGame.currentMoveIndex >= 0 then
+                        (if currentMoveIndex >= 0 then
                             "pointer"
 
                          else
@@ -1418,7 +1453,7 @@ viewGame ({ t, c } as userConfig) model frontendGame mode =
                     , style "padding" "8px"
                     , style "font-size" "1.2em"
                     , style "background-color"
-                        (if frontendGame.currentMoveIndex < List.length frontendGame.moveHistory - 1 then
+                        (if currentMoveIndex < List.length moveHistory - 1 then
                             Color.primary
 
                          else
@@ -1428,7 +1463,7 @@ viewGame ({ t, c } as userConfig) model frontendGame mode =
                     , style "border" "none"
                     , style "border-radius" "6px"
                     , style "cursor"
-                        (if frontendGame.currentMoveIndex < List.length frontendGame.moveHistory - 1 then
+                        (if currentMoveIndex < List.length moveHistory - 1 then
                             "pointer"
 
                          else
@@ -1568,8 +1603,72 @@ playerToString t player =
             t.playerO
 
 
-viewStatus : UserConfig -> FrontendOnlineGame -> GameMode -> Html FrontendMsg
-viewStatus ({ t, c } as userConfig) frontendGame mode =
+viewStatusOnline : UserConfig -> FrontendOnlineGame -> Html FrontendMsg
+viewStatusOnline ({ t, c } as userConfig) frontendGame =
+    let
+        isOpponentTurn =
+            frontendGame.selfSide /= frontendGame.currentPlayer
+    in
+    div
+        [ style "margin" "10px 0"
+        , style "color" c.text
+        , style "font-size" "0.7em"
+        ]
+        [ div
+            [ style "display" "flex"
+            , style "justify-content" "center"
+            , style "align-items" "center"
+            , style "gap" "10px"
+            ]
+            [ text <|
+                case frontendGame.gameResult of
+                    Just Won ->
+                        t.youWon
+
+                    Just Lost ->
+                        t.youLost
+
+                    Just Draw ->
+                        t.draw
+
+                    Nothing ->
+                        case frontendGame.winner of
+                            Just winner ->
+                                if frontendGame.selfSide == winner then
+                                    t.youWon
+
+                                else
+                                    t.youLost
+
+                            Nothing ->
+                                if isBigBoardComplete frontendGame.boards then
+                                    t.draw
+
+                                else if isOpponentTurn then
+                                    t.enemyTurn
+
+                                else
+                                    t.yourTurn
+            ]
+        , div
+            [ style "display" "flex"
+            , style "justify-content" "space-between"
+            , style "margin-top" "10px"
+            ]
+            [ div []
+                [ text t.eloRating
+                , Elo.getEloRating frontendGame.self |> String.fromInt |> text
+                ]
+            , div []
+                [ text t.eloRating
+                , Elo.getEloRating frontendGame.opponent |> String.fromInt |> text
+                ]
+            ]
+        ]
+
+
+viewStatusOffline : UserConfig -> FrontendOfflineGame -> GameMode -> Html FrontendMsg
+viewStatusOffline ({ t, c } as userConfig) frontendGame mode =
     div
         [ style "margin" "10px 0"
         , style "color" c.text
@@ -1596,8 +1695,8 @@ viewStatus ({ t, c } as userConfig) frontendGame mode =
                         case frontendGame.winner of
                             Just winner ->
                                 case mode of
-                                    OnlineGameMode ->
-                                        if (frontendGame.self |> Maybe.map Tuple.first) == Just winner then
+                                    WithBot _ ->
+                                        if frontendGame.selfSide == winner then
                                             t.youWon
 
                                         else
@@ -1624,24 +1723,15 @@ viewStatus ({ t, c } as userConfig) frontendGame mode =
                                             else
                                                 t.yourTurn
 
-                                        OnlineGameMode ->
-                                            case frontendGame.self of
-                                                Just ( player, _ ) ->
-                                                    if player == frontendGame.currentPlayer then
-                                                        t.yourTurn
-
-                                                    else
-                                                        t.enemyTurn
-
-                                                Nothing ->
-                                                    t.waitingForOpponent
-
                                         WithFriend ->
                                             if frontendGame.currentPlayer == X then
                                                 t.playerXTurn
 
                                             else
                                                 t.playerOTurn
+
+                                        _ ->
+                                            ""
             , if frontendGame.botIsPlaying then
                 viewThinkingIndicator
 
@@ -1649,31 +1739,21 @@ viewStatus ({ t, c } as userConfig) frontendGame mode =
                 text ""
             ]
         , case mode of
-            OnlineGameMode ->
-                case frontendGame.self of
-                    Just ( player, selfElo ) ->
-                        case frontendGame.opponent of
-                            OnlineOpponent opponent ->
-                                div
-                                    [ style "display" "flex"
-                                    , style "justify-content" "space-between"
-                                    , style "margin-top" "10px"
-                                    ]
-                                    [ div []
-                                        [ text t.eloRating
-                                        , text (String.fromInt selfElo)
-                                        ]
-                                    , div []
-                                        [ text t.eloRating
-                                        , text (String.fromInt opponent.elo)
-                                        ]
-                                    ]
-
-                            _ ->
-                                text ""
-
-                    Nothing ->
-                        text ""
+            WithBot difficulty ->
+                div
+                    [ style "display" "flex"
+                    , style "justify-content" "space-between"
+                    , style "margin-top" "10px"
+                    ]
+                    [ div []
+                        [ text t.eloRating
+                        , Elo.getEloRating frontendGame.self |> String.fromInt |> text
+                        ]
+                    , div []
+                        [ text t.eloRating
+                        , Elo.getEloRatingFromDifficulty difficulty |> String.fromInt |> text
+                        ]
+                    ]
 
             _ ->
                 text ""
@@ -1845,23 +1925,16 @@ refactoredVersionOfViewLanguageSelector { c } selectedLang lang =
         [ lang |> languageToString |> String.toUpper |> text ]
 
 
-viewBigBoard : UserConfig -> FrontendOnlineGame -> Html FrontendMsg
-viewBigBoard ({ t, c } as userConfig) frontendGame =
+viewBigBoard : UserConfig -> FrontendGameState a -> Bool -> Html FrontendMsg
+viewBigBoard ({ t, c } as userConfig) frontendGame isBotTurn =
     let
-        isBotTurn =
-            frontendGame.botIsPlaying
-
         isOpponentTurn =
-            case frontendGame.self of
-                Just ( player, _ ) ->
-                    player /= frontendGame.currentPlayer
-
-                Nothing ->
-                    False
+            frontendGame.selfSide /= frontendGame.currentPlayer
 
         isViewingHistory =
             frontendGame.currentMoveIndex < List.length frontendGame.moveHistory - 1
 
+        shouldBlink : Bool
         shouldBlink =
             not isViewingHistory
                 && ((isBotTurn && frontendGame.activeBoard == Nothing)
@@ -1884,7 +1957,7 @@ viewBigBoard ({ t, c } as userConfig) frontendGame =
             ]
 
         boardElements =
-            List.indexedMap (viewSmallBoard userConfig frontendGame) boards
+            List.indexedMap (viewSmallBoard userConfig frontendGame isBotTurn) boards
 
         blinkStyle =
             if shouldBlink then
@@ -1898,22 +1971,14 @@ viewBigBoard ({ t, c } as userConfig) frontendGame =
         boardElements
 
 
-viewSmallBoard : UserConfig -> FrontendOnlineGame -> Int -> SmallBoard -> Html FrontendMsg
-viewSmallBoard ({ t, c } as userConfig) frontendGame boardIndex smallBoardData =
+viewSmallBoard : UserConfig -> FrontendGameState a -> Bool -> Int -> SmallBoard -> Html FrontendMsg
+viewSmallBoard ({ t, c } as userConfig) frontendGame isBotTurn boardIndex smallBoardData =
     let
         isActive =
             GameLogic.isSmallBoardActive frontendGame.activeBoard boardIndex smallBoardData
 
-        isBotTurn =
-            frontendGame.botIsPlaying
-
         isOpponentTurn =
-            case frontendGame.self of
-                Just ( player, _ ) ->
-                    player /= frontendGame.currentPlayer
-
-                Nothing ->
-                    False
+            frontendGame.selfSide /= frontendGame.currentPlayer
 
         isViewingHistory =
             frontendGame.currentMoveIndex < List.length frontendGame.moveHistory - 1
@@ -1976,7 +2041,7 @@ viewSmallBoard ({ t, c } as userConfig) frontendGame boardIndex smallBoardData =
         cellElements
 
 
-viewCell : UserConfig -> FrontendOnlineGame -> Int -> Bool -> List (Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
+viewCell : UserConfig -> FrontendGameState a -> Int -> Bool -> List (Attribute FrontendMsg) -> Int -> CellState -> Html FrontendMsg
 viewCell ({ t, c } as userConfig) frontendGame boardIndex isClickable cellStyles cellIndex cellState =
     let
         ( symbol, textColor ) =
@@ -2128,7 +2193,7 @@ subscriptions model =
         ]
 
 
-reconstructBoardFromMoves : List Move -> Int -> FrontendOnlineGame -> FrontendOnlineGame
+reconstructBoardFromMoves : List Move -> Int -> FrontendGameState a -> FrontendGameState a
 reconstructBoardFromMoves moves upToIndex initialBoardState =
     let
         movesToApply =
@@ -2398,7 +2463,7 @@ viewLogin ({ t, c } as userConfig) model =
                     )
                     [ text t.loginOrSignUpButton ]
 
-            Registered _ ->
+            Registered ->
                 text ""
         , viewGameButton userConfig (Dom.id "returnToMenu") t.backToMenu ReturnToMenu
         ]
